@@ -18,7 +18,7 @@ export default function Home() {
 
   // 검색 모드 상태 추가
   const [searchMode, setSearchMode] = useState<SearchMode>('keyword');
-  const [minSimilarity, setMinSimilarity] = useState<number>(0.0);  // 기본값 0 (모든 결과 표시)
+  const [minSimilarity, setMinSimilarity] = useState<number>(0.3);  // 기본값 0.3 (보통)
 
   const [viewMode, setViewMode] = useState<ViewMode>('list');
   const [sortOrder, setSortOrder] = useState<SortOrder>('desc');
@@ -44,6 +44,13 @@ export default function Home() {
   const [dateFilter, setDateFilter] = useState<string>('all'); // 'all', 'today', 'week', 'month', 'custom'
   const [customStartDate, setCustomStartDate] = useState<string>('');
   const [customEndDate, setCustomEndDate] = useState<string>('');
+
+  // 설정 모달
+  const [showSettings, setShowSettings] = useState<boolean>(false);
+  const [defaultQuery, setDefaultQuery] = useState<string>('');
+  const [defaultSearchMode, setDefaultSearchMode] = useState<SearchMode>('keyword');
+  const [defaultMinSimilarity, setDefaultMinSimilarity] = useState<number>(0.3);
+  const [autoSearchEnabled, setAutoSearchEnabled] = useState<boolean>(false);
 
   useEffect(() => {
     const savedTheme = localStorage.getItem('theme') as Theme;
@@ -89,6 +96,34 @@ export default function Home() {
         console.error('Failed to load bookmarks:', e);
         localStorage.removeItem('bookmarkedArticles');
         setBookmarkedArticles(new Set());
+      }
+    }
+
+    // 자동 검색 설정 로드
+    const savedSettings = localStorage.getItem('autoSearchSettings');
+    if (savedSettings) {
+      try {
+        const parsed = JSON.parse(savedSettings);
+        setAutoSearchEnabled(parsed.enabled || false);
+        setDefaultQuery(parsed.query || '');
+        setDefaultSearchMode(parsed.searchMode || 'keyword');
+        setDefaultMinSimilarity(parsed.minSimilarity || 0.3);
+
+        if (parsed.enabled && parsed.query) {
+          // 자동 검색 실행
+          setQuery(parsed.query);
+          setSearchMode(parsed.searchMode || 'keyword');
+          if (parsed.minSimilarity !== undefined) {
+            setMinSimilarity(parsed.minSimilarity);
+          }
+
+          // 검색 실행
+          setTimeout(() => {
+            performSearch(parsed.query, parsed.searchMode || 'keyword');
+          }, 100);
+        }
+      } catch (e) {
+        console.error('Failed to load auto search settings:', e);
       }
     }
   }, []);
@@ -138,10 +173,19 @@ export default function Home() {
     document.documentElement.setAttribute('data-theme', newTheme);
   };
 
-  const handleSearch = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const saveAutoSearchSettings = () => {
+    const settings = {
+      enabled: autoSearchEnabled,
+      query: defaultQuery,
+      searchMode: defaultSearchMode,
+      minSimilarity: defaultMinSimilarity,
+    };
+    localStorage.setItem('autoSearchSettings', JSON.stringify(settings));
+    setShowSettings(false);
+  };
 
-    if (!query.trim()) {
+  const performSearch = async (searchQuery: string, mode: SearchMode) => {
+    if (!searchQuery.trim()) {
       setError('검색어를 입력해주세요');
       return;
     }
@@ -151,19 +195,19 @@ export default function Home() {
     setSelectedSource(null);
     setCurrentPage(1);
     setDisplayedCount(itemsPerPage);
-    setLastSearchQuery(query);
+    setLastSearchQuery(searchQuery);
     setShowHistory(false);
 
     // 검색 히스토리에 추가
-    addToSearchHistory(query);
+    addToSearchHistory(searchQuery);
 
     const startTime = performance.now();
 
     try {
-      if (searchMode === 'semantic') {
+      if (mode === 'semantic') {
         // 시맨틱 검색
         const response = await NewsApiService.semanticSearchNews({
-          q: query,
+          q: searchQuery,
           hl: 'ko',
           gl: 'kr',
           num: 500,
@@ -175,7 +219,7 @@ export default function Home() {
       } else {
         // 키워드 검색
         const response = await NewsApiService.searchNews({
-          q: query,
+          q: searchQuery,
           hl: 'ko',
           gl: 'kr',
           num: 500,
@@ -195,6 +239,11 @@ export default function Home() {
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleSearch = async (e: React.FormEvent) => {
+    e.preventDefault();
+    await performSearch(query, searchMode);
   };
 
   const sources = useMemo(() => {
@@ -366,15 +415,25 @@ export default function Home() {
 
   return (
     <div className={styles.container}>
-      {/* 우측 상단 고정 테마 토글 버튼 */}
-      <button
-        className={styles.themeToggle}
-        onClick={toggleTheme}
-        aria-label="테마 전환"
-        title={theme === 'light' ? '다크 모드로 전환' : '라이트 모드로 전환'}
-      >
-        {theme === 'light' ? '🌙' : '☀️'}
-      </button>
+      {/* 우측 상단 고정 버튼들 */}
+      <div className={styles.fixedButtons}>
+        <button
+          className={styles.settingsButton}
+          onClick={() => setShowSettings(true)}
+          aria-label="설정"
+          title="자동 검색 설정"
+        >
+          ⚙️
+        </button>
+        <button
+          className={styles.themeToggle}
+          onClick={toggleTheme}
+          aria-label="테마 전환"
+          title={theme === 'light' ? '다크 모드로 전환' : '라이트 모드로 전환'}
+        >
+          {theme === 'light' ? '🌙' : '☀️'}
+        </button>
+      </div>
 
       <header className={styles.header}>
         <h1>뉴스 검색</h1>
@@ -413,24 +472,25 @@ export default function Home() {
             <label htmlFor="similarity-slider">
               최소 유사도: <strong>{(minSimilarity * 100).toFixed(0)}%</strong>
             </label>
+
             <input
               id="similarity-slider"
               type="range"
               min="0.0"
               max="0.9"
-              step="0.1"
+              step="0.05"
               value={minSimilarity}
               onChange={(e) => setMinSimilarity(parseFloat(e.target.value))}
               className={styles.similaritySlider}
             />
             <div className={styles.similarityHint}>
               {minSimilarity >= 0.6
-                ? '엄격 (매우 관련성 높은 뉴스만)'
-                : minSimilarity >= 0.3
-                ? '보통 (적당히 관련있는 뉴스)'
-                : minSimilarity > 0
-                ? '느슨 (약간 관련있어도 포함)'
-                : '전체 (모든 뉴스 표시, 관련도순 정렬)'}
+                ? '엄격: 매우 관련성 높은 뉴스만 표시'
+                : minSimilarity >= 0.4
+                ? '보통: 관련있는 뉴스 표시 (권장)'
+                : minSimilarity >= 0.2
+                ? '느슨: 약간 관련있어도 포함'
+                : '전체: 모든 뉴스 표시 (관련도순 정렬)'}
             </div>
           </div>
         )}
@@ -793,6 +853,131 @@ export default function Home() {
           </div>
         )}
       </main>
+
+      {/* 설정 모달 */}
+      {showSettings && (
+        <div className={styles.modalOverlay} onClick={() => setShowSettings(false)}>
+          <div className={styles.modalContent} onClick={(e) => e.stopPropagation()}>
+            <div className={styles.modalHeader}>
+              <h2>⚙️ 설정</h2>
+              <button
+                className={styles.modalCloseButton}
+                onClick={() => setShowSettings(false)}
+                aria-label="닫기"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className={styles.modalBody}>
+              {/* 자동 검색 섹션 */}
+              <div className={styles.settingSection}>
+                <h3 className={styles.sectionTitle}>자동 검색</h3>
+
+                <div className={styles.settingItem}>
+                  <label className={styles.toggleLabel}>
+                    <input
+                      type="checkbox"
+                      checked={autoSearchEnabled}
+                      onChange={(e) => setAutoSearchEnabled(e.target.checked)}
+                      className={styles.toggleCheckbox}
+                    />
+                    <span className={styles.toggleText}>
+                      페이지 로드 시 자동으로 검색 실행
+                    </span>
+                  </label>
+                </div>
+
+                <div className={styles.settingItem}>
+                  <label htmlFor="default-query" className={styles.settingLabel}>
+                    기본 검색어
+                  </label>
+                  <input
+                    id="default-query"
+                    type="text"
+                    value={defaultQuery}
+                    onChange={(e) => setDefaultQuery(e.target.value)}
+                    placeholder="예: 최신 뉴스, 기술 뉴스"
+                    className={styles.settingInput}
+                  />
+                </div>
+
+                <div className={styles.settingItem}>
+                  <label className={styles.settingLabel}>검색 모드</label>
+                  <div className={styles.searchModeOptions}>
+                    <label className={styles.radioLabel}>
+                      <input
+                        type="radio"
+                        name="defaultSearchMode"
+                        value="keyword"
+                        checked={defaultSearchMode === 'keyword'}
+                        onChange={() => setDefaultSearchMode('keyword')}
+                        className={styles.radioInput}
+                      />
+                      <span>일반 검색</span>
+                    </label>
+                    <label className={styles.radioLabel}>
+                      <input
+                        type="radio"
+                        name="defaultSearchMode"
+                        value="semantic"
+                        checked={defaultSearchMode === 'semantic'}
+                        onChange={() => setDefaultSearchMode('semantic')}
+                        className={styles.radioInput}
+                      />
+                      <span>시맨틱 검색</span>
+                    </label>
+                  </div>
+                </div>
+
+                {defaultSearchMode === 'semantic' && (
+                  <div className={styles.settingItem}>
+                    <label htmlFor="default-similarity" className={styles.settingLabel}>
+                      최소 유사도: <strong>{(defaultMinSimilarity * 100).toFixed(0)}%</strong>
+                    </label>
+                    <input
+                      id="default-similarity"
+                      type="range"
+                      min="0.0"
+                      max="0.9"
+                      step="0.05"
+                      value={defaultMinSimilarity}
+                      onChange={(e) => setDefaultMinSimilarity(parseFloat(e.target.value))}
+                      className={styles.similaritySlider}
+                    />
+                    <div className={styles.similarityHint}>
+                      {defaultMinSimilarity >= 0.6
+                        ? '엄격: 매우 관련성 높은 뉴스만 표시'
+                        : defaultMinSimilarity >= 0.4
+                        ? '보통: 관련있는 뉴스 표시 (권장)'
+                        : defaultMinSimilarity >= 0.2
+                        ? '느슨: 약간 관련있어도 포함'
+                        : '전체: 모든 뉴스 표시 (관련도순 정렬)'}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* 나중에 다른 섹션 추가 가능 */}
+            </div>
+
+            <div className={styles.modalFooter}>
+              <button
+                className={styles.cancelButton}
+                onClick={() => setShowSettings(false)}
+              >
+                취소
+              </button>
+              <button
+                className={styles.saveButton}
+                onClick={saveAutoSearchSettings}
+              >
+                저장
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

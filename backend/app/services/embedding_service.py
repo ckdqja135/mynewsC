@@ -1,9 +1,13 @@
 from sentence_transformers import SentenceTransformer
 from sklearn.metrics.pairwise import cosine_similarity
 import numpy as np
-from typing import List, Tuple
+from typing import List, Tuple, Dict
 from app.models import NewsArticle
 import logging
+import faiss
+import pickle
+import os
+from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
@@ -11,24 +15,133 @@ logger = logging.getLogger(__name__)
 class EmbeddingService:
     """
     Service for generating embeddings and calculating semantic similarity.
-    Uses Korean-optimized Sentence Transformer model.
+    Uses Korean-optimized Sentence Transformer model with FAISS vector search.
     """
 
-    def __init__(self, model_name: str = "jhgan/ko-sroberta-multitask"):
+    def __init__(self, model_name: str = "jhgan/ko-sroberta-multitask", cache_dir: str = "data/embeddings"):
         """
-        Initialize the embedding service with a Korean language model.
+        Initialize the embedding service with a Korean language model and FAISS index.
 
         Args:
             model_name: Name of the Sentence Transformer model to use.
                        Default is jhgan/ko-sroberta-multitask (Korean-optimized)
+            cache_dir: Directory to store FAISS index and metadata
         """
         try:
             logger.info(f"Loading embedding model: {model_name}")
             self.model = SentenceTransformer(model_name)
-            logger.info("Embedding model loaded successfully")
+            self.embedding_dim = self.model.get_sentence_embedding_dimension()
+            logger.info(f"Embedding model loaded successfully (dimension: {self.embedding_dim})")
+
+            # FAISS index setup
+            self.cache_dir = Path(cache_dir)
+            self.cache_dir.mkdir(parents=True, exist_ok=True)
+            self.index_path = self.cache_dir / "faiss_index.bin"
+            self.metadata_path = self.cache_dir / "metadata.pkl"
+
+            # Article ID to index mapping
+            self.article_id_to_idx: Dict[str, int] = {}
+            self.idx_to_article_id: Dict[int, str] = {}
+            self.article_texts: Dict[str, str] = {}  # Store article texts for debugging
+
+            # Initialize or load FAISS index
+            self._initialize_faiss_index()
+
+            logger.info(f"FAISS index initialized with {self.index.ntotal} vectors")
+
         except Exception as e:
             logger.error(f"Failed to load embedding model: {str(e)}")
             raise RuntimeError(f"Failed to initialize embedding service: {str(e)}")
+
+    def _initialize_faiss_index(self):
+        """
+        Initialize FAISS index. Load from disk if exists, otherwise create new.
+        """
+        if self.index_path.exists() and self.metadata_path.exists():
+            try:
+                logger.info("Loading existing FAISS index from disk...")
+                self.index = faiss.read_index(str(self.index_path))
+
+                with open(self.metadata_path, 'rb') as f:
+                    metadata = pickle.load(f)
+                    self.article_id_to_idx = metadata.get('article_id_to_idx', {})
+                    self.idx_to_article_id = metadata.get('idx_to_article_id', {})
+                    self.article_texts = metadata.get('article_texts', {})
+
+                logger.info(f"Loaded FAISS index with {self.index.ntotal} vectors")
+                return
+            except Exception as e:
+                logger.warning(f"Failed to load existing index: {str(e)}. Creating new index.")
+
+        # Create new FAISS index (Inner Product for cosine similarity with normalized vectors)
+        self.index = faiss.IndexFlatIP(self.embedding_dim)
+        logger.info("Created new FAISS index")
+
+    def _save_index(self):
+        """
+        Save FAISS index and metadata to disk.
+        """
+        try:
+            faiss.write_index(self.index, str(self.index_path))
+
+            metadata = {
+                'article_id_to_idx': self.article_id_to_idx,
+                'idx_to_article_id': self.idx_to_article_id,
+                'article_texts': self.article_texts
+            }
+
+            with open(self.metadata_path, 'wb') as f:
+                pickle.dump(metadata, f)
+
+            logger.info(f"Saved FAISS index with {self.index.ntotal} vectors to disk")
+        except Exception as e:
+            logger.error(f"Failed to save FAISS index: {str(e)}")
+
+    def add_articles_to_index(self, articles: List[NewsArticle]):
+        """
+        Add new articles to FAISS index (only if not already indexed).
+
+        Args:
+            articles: List of news articles to add
+        """
+        new_articles = []
+        new_texts = []
+
+        for article in articles:
+            if article.id not in self.article_id_to_idx:
+                new_articles.append(article)
+                text = article.title
+                if article.snippet:
+                    text += " " + article.snippet
+                new_texts.append(text)
+
+        if not new_articles:
+            logger.info("No new articles to add to index")
+            return
+
+        logger.info(f"Adding {len(new_articles)} new articles to FAISS index...")
+
+        # Generate embeddings for new articles
+        embeddings = self.encode_batch(new_texts)
+
+        # Normalize embeddings for cosine similarity (FAISS Inner Product)
+        faiss.normalize_L2(embeddings)
+
+        # Add to FAISS index
+        start_idx = self.index.ntotal
+        self.index.add(embeddings)
+
+        # Update metadata
+        for i, article in enumerate(new_articles):
+            idx = start_idx + i
+            self.article_id_to_idx[article.id] = idx
+            self.idx_to_article_id[idx] = article.id
+            self.article_texts[article.id] = new_texts[i]
+
+        # Save to disk
+        self._save_index()
+
+        logger.info(f"Added {len(new_articles)} articles. Total in index: {self.index.ntotal}")
 
     def encode_text(self, text: str) -> np.ndarray:
         """
@@ -182,6 +295,87 @@ class EmbeddingService:
             logger.error(f"Failed to rank articles: {str(e)}")
             # Return empty list if ranking fails
             return []
+
+    def rank_articles_by_similarity_faiss(
+        self,
+        query: str,
+        articles: List[NewsArticle],
+        min_similarity: float = 0.0,
+        max_results: int = None
+    ) -> List[Tuple[NewsArticle, float]]:
+        """
+        Rank articles by semantic similarity using FAISS for ultra-fast search.
+
+        This method:
+        1. Adds new articles to FAISS index (cached articles are skipped)
+        2. Uses FAISS to find top-k most similar articles
+        3. Filters by minimum similarity threshold
+        4. Returns sorted results
+
+        Args:
+            query: Search query
+            articles: List of news articles to rank
+            min_similarity: Minimum similarity threshold (0 to 1)
+            max_results: Maximum number of results to return (None = unlimited)
+
+        Returns:
+            List of tuples (article, similarity_score) sorted by similarity (highest first)
+        """
+        if not articles:
+            return []
+
+        try:
+            # Add new articles to FAISS index
+            self.add_articles_to_index(articles)
+
+            # Encode query
+            logger.info(f"Encoding query: {query}")
+            query_embedding = self.encode_text(query)
+
+            # Normalize query embedding for cosine similarity
+            query_embedding_norm = query_embedding.reshape(1, -1).copy()
+            faiss.normalize_L2(query_embedding_norm)
+
+            # Search FAISS index
+            # Search for more than needed to account for filtering
+            k = min(self.index.ntotal, max_results * 3 if max_results else self.index.ntotal)
+            k = max(k, 100)  # At least search top 100
+
+            logger.info(f"Searching FAISS index ({self.index.ntotal} vectors) for top-{k} results...")
+            distances, indices = self.index.search(query_embedding_norm, k)
+
+            # Convert FAISS results to article matches
+            results = []
+            article_id_set = {article.id for article in articles}
+
+            for idx, similarity in zip(indices[0], distances[0]):
+                if idx == -1:  # FAISS returns -1 for empty slots
+                    continue
+
+                article_id = self.idx_to_article_id.get(idx)
+                if article_id and article_id in article_id_set and similarity >= min_similarity:
+                    # Find the article object
+                    article = next((a for a in articles if a.id == article_id), None)
+                    if article:
+                        results.append((article, float(similarity)))
+
+                # Early stop if we have enough results
+                if max_results and len(results) >= max_results:
+                    break
+
+            logger.info(f"FAISS search complete: {len(results)} articles above threshold")
+            return results
+
+        except Exception as e:
+            logger.error(f"Failed to rank articles with FAISS: {str(e)}")
+            # Fallback to original method
+            logger.warning("Falling back to non-FAISS method")
+            return self.rank_articles_by_similarity(
+                query=query,
+                articles=articles,
+                min_similarity=min_similarity,
+                max_results=max_results
+            )
 
 
 # Singleton instance

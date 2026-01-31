@@ -47,10 +47,18 @@
   z-index: 1;
 }
 
-.themeToggle {
+/* 우측 상단 고정 버튼들 */
+.fixedButtons {
   position: fixed;
   top: 20px;
   right: 20px;
+  display: flex;
+  gap: 12px;
+  z-index: 1000;
+}
+
+.settingsButton,
+.themeToggle {
   padding: 14px 18px;
   font-size: 1.8rem;
   background: var(--bg-glass);
@@ -60,7 +68,6 @@
   border-radius: 50%;
   cursor: pointer;
   transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-  z-index: 1000;
   box-shadow: 0 4px 12px var(--shadow-md);
   width: 56px;
   height: 56px;
@@ -69,6 +76,7 @@
   justify-content: center;
 }
 
+.settingsButton:hover,
 .themeToggle:hover {
   transform: scale(1.15) rotate(20deg);
   background: var(--bg-secondary);
@@ -76,6 +84,7 @@
   box-shadow: 0 8px 24px var(--shadow-lg);
 }
 
+.settingsButton:active,
 .themeToggle:active {
   transform: scale(1.05) rotate(0deg);
 }
@@ -152,9 +161,47 @@
 
 .similarityControl label {
   display: block;
-  margin-bottom: 10px;
+  margin-bottom: 15px;
   color: var(--text-primary);
   font-size: 15px;
+  font-weight: 600;
+}
+
+/* 유사도 프리셋 버튼 */
+.similarityPresets {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 15px;
+  flex-wrap: wrap;
+}
+
+.presetButton {
+  flex: 1;
+  min-width: 100px;
+  padding: 10px 16px;
+  font-size: 14px;
+  font-weight: 600;
+  background: var(--bg-hover);
+  color: var(--text-secondary);
+  border: 2px solid var(--border-color);
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.3s ease;
+}
+
+.presetButton:hover {
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  border-color: var(--accent-color);
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px var(--shadow-md);
+}
+
+.presetButton.active {
+  background: var(--accent-gradient);
+  color: white;
+  border-color: var(--accent-color);
+  box-shadow: 0 4px 12px var(--glow);
 }
 
 .similaritySlider {
@@ -1073,4 +1120,287 @@
   .dateFilterButton {
     width: 100%;
   }
+
+  .fixedButtons {
+    top: 12px;
+    right: 12px;
+  }
+
+  .settingsButton,
+  .themeToggle {
+    width: 48px;
+    height: 48px;
+    padding: 10px 12px;
+    font-size: 1.5rem;
+  }
+}
+
+/* 설정 모달 */
+.modalOverlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.6);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 2000;
+  animation: fadeIn 0.2s ease-out;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.modalContent {
+  background: var(--bg-primary);
+  border-radius: 20px;
+  box-shadow: 0 20px 60px var(--shadow-lg);
+  border: 2px solid var(--border-color);
+  width: 90%;
+  max-width: 500px;
+  max-height: 90vh;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  animation: slideUp 0.3s ease-out;
+}
+
+@keyframes slideUp {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.modalHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 24px;
+  border-bottom: 2px solid var(--border-color);
+  background: var(--bg-secondary);
+}
+
+.modalHeader h2 {
+  margin: 0;
+  font-size: 1.5rem;
+  color: var(--text-primary);
+  font-weight: 700;
+}
+
+.modalCloseButton {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  border: 2px solid var(--border-color);
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 1.5rem;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s ease;
+}
+
+.modalCloseButton:hover {
+  background: var(--error-bg);
+  border-color: var(--error-border);
+  color: var(--error-text);
+  transform: rotate(90deg);
+}
+
+.modalBody {
+  padding: 24px;
+  overflow-y: auto;
+  flex: 1;
+}
+
+.settingSection {
+  padding: 20px;
+  background: var(--bg-hover);
+  border-radius: 12px;
+  border: 2px solid var(--border-color);
+  margin-bottom: 20px;
+}
+
+.settingSection:last-child {
+  margin-bottom: 0;
+}
+
+.sectionTitle {
+  margin: 0 0 20px 0;
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  padding-bottom: 12px;
+  border-bottom: 2px solid var(--border-color);
+}
+
+.settingItem {
+  margin-bottom: 20px;
+}
+
+.settingItem:last-child {
+  margin-bottom: 0;
+}
+
+.toggleLabel {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  cursor: pointer;
+  padding: 16px;
+  background: var(--bg-hover);
+  border-radius: 12px;
+  border: 2px solid var(--border-color);
+  transition: all 0.2s ease;
+}
+
+.toggleLabel:hover {
+  background: var(--bg-secondary);
+  border-color: var(--accent-color);
+}
+
+.toggleCheckbox {
+  width: 24px;
+  height: 24px;
+  cursor: pointer;
+  accent-color: var(--accent-color);
+}
+
+.toggleText {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.settingLabel {
+  display: block;
+  margin-bottom: 10px;
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text-primary);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.settingInput {
+  width: 100%;
+  padding: 14px 16px;
+  font-size: 15px;
+  font-weight: 500;
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  border: 2px solid var(--border-color);
+  border-radius: 10px;
+  transition: all 0.2s ease;
+}
+
+.settingInput:focus {
+  outline: none;
+  border-color: var(--accent-color);
+  box-shadow: 0 0 0 4px var(--glow);
+}
+
+.settingInput::placeholder {
+  color: var(--text-tertiary);
+}
+
+.searchModeOptions {
+  display: flex;
+  gap: 12px;
+}
+
+.radioLabel {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 14px 16px;
+  background: var(--bg-hover);
+  border: 2px solid var(--border-color);
+  border-radius: 10px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+
+.radioLabel:hover {
+  background: var(--bg-secondary);
+  border-color: var(--accent-color);
+  color: var(--text-primary);
+}
+
+.radioLabel:has(.radioInput:checked) {
+  background: var(--accent-gradient);
+  border-color: var(--accent-color);
+  color: white;
+  box-shadow: 0 4px 12px var(--glow);
+}
+
+.radioInput {
+  width: 20px;
+  height: 20px;
+  cursor: pointer;
+  accent-color: var(--accent-color);
+}
+
+.modalFooter {
+  display: flex;
+  gap: 12px;
+  padding: 20px 24px;
+  border-top: 2px solid var(--border-color);
+  background: var(--bg-secondary);
+}
+
+.cancelButton,
+.saveButton {
+  flex: 1;
+  padding: 14px 24px;
+  font-size: 15px;
+  font-weight: 700;
+  border-radius: 10px;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  border: 2px solid var(--border-color);
+}
+
+.cancelButton {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.cancelButton:hover {
+  background: var(--bg-secondary);
+  border-color: var(--text-secondary);
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px var(--shadow-md);
+}
+
+.saveButton {
+  background: var(--accent-gradient);
+  color: white;
+  border-color: var(--accent-color);
+  box-shadow: 0 4px 12px var(--glow);
+}
+
+.saveButton:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 20px var(--glow);
 }

@@ -24,7 +24,7 @@ app = FastAPI(
 # CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000"],
+    allow_origins=["*"],  # 개발 환경에서 모든 origin 허용
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -160,7 +160,7 @@ async def search_news(request: NewsSearchRequest):
 @app.post("/api/news/semantic-search", response_model=SemanticSearchResponse)
 async def semantic_search_news(request: SemanticSearchRequest):
     """
-    Semantic search for news articles using embedding-based similarity with optimized chunked processing.
+    Semantic search for news articles using FAISS vector search for ultra-fast similarity matching.
     Returns articles ranked by semantic similarity to the query.
 
     - **q**: Search query (required, 1-200 characters)
@@ -168,21 +168,21 @@ async def semantic_search_news(request: SemanticSearchRequest):
     - **gl**: Country code (default: kr)
     - **num**: Number of results (max 500)
     - **min_similarity**: Minimum similarity threshold 0-1 (default: 0.0)
-    - **chunk_size**: Articles processed per chunk for performance (default: 100)
-    - **early_stop_threshold**: Stop after finding N results (optional, auto-calculated if not set)
+    - **chunk_size**: [DEPRECATED] No longer used with FAISS
+    - **early_stop_threshold**: [DEPRECATED] No longer used with FAISS
 
-    Performance optimization:
-    - Processes articles in chunks to reduce memory usage
-    - Supports early stopping to avoid processing all articles when enough results are found
-    - Lower min_similarity with early_stop_threshold balances quality and speed
+    FAISS Performance Benefits:
+    - Embeddings are cached - computed only once per article
+    - Vector search is 10-100x faster than computing all similarities
+    - Index is persisted to disk - survives server restarts
+    - Scales to millions of articles
 
     This endpoint:
     1. Fetches news from all sources (Google News, Naver, RSS)
-    2. Processes articles in chunks (default: 100 per chunk)
-    3. Calculates semantic similarity between query and articles
+    2. Adds new articles to FAISS index (cached articles are skipped)
+    3. Performs ultra-fast vector search using FAISS
     4. Filters by minimum similarity threshold
-    5. Stops early if enough results are found (optional)
-    6. Returns results sorted by similarity score (highest first)
+    5. Returns results sorted by similarity score (highest first)
     """
     if not embedding_service:
         raise HTTPException(
@@ -238,17 +238,12 @@ async def semantic_search_news(request: SemanticSearchRequest):
 
         print(f"[DEBUG] After deduplication: {len(unique_articles)} unique articles")
 
-        # Rank articles by semantic similarity with optimized chunked processing
-        # Use early_stop_threshold if provided, otherwise process all
-        early_stop = request.early_stop_threshold if request.early_stop_threshold else (request.num * 3 if request.min_similarity > 0 else None)
-
-        ranked_results = embedding_service.rank_articles_by_similarity(
+        # Rank articles by semantic similarity using FAISS for ultra-fast search
+        ranked_results = embedding_service.rank_articles_by_similarity_faiss(
             query=request.q,
             articles=unique_articles,
             min_similarity=request.min_similarity,
-            chunk_size=request.chunk_size,
-            max_results=request.num * 2,  # Get up to 2x requested for better quality pool
-            early_stop_threshold=early_stop
+            max_results=request.num * 2  # Get up to 2x requested for better quality pool
         )
 
         print(f"[DEBUG] After semantic filtering (min_similarity={request.min_similarity}): {len(ranked_results)} articles")
