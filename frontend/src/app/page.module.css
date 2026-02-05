@@ -295,19 +295,19 @@
 }
 
 .scoreHigh {
-  background: linear-gradient(135deg, #10b981, #059669);
+  background: #10b981;
   box-shadow: 0 4px 12px rgba(16, 185, 129, 0.4);
   animation: pulse-green 2s ease-in-out infinite;
 }
 
 .scoreMedium {
-  background: linear-gradient(135deg, #f59e0b, #d97706);
+  background: #f59e0b;
   box-shadow: 0 4px 12px rgba(245, 158, 11, 0.4);
   animation: pulse-orange 2s ease-in-out infinite;
 }
 
 .scoreLow {
-  background: linear-gradient(135deg, #6b7280, #4b5563);
+  background: #6b7280;
   box-shadow: 0 4px 12px rgba(107, 114, 128, 0.3);
 }
 
@@ -493,6 +493,84 @@
   cursor: not-allowed;
 }
 
+/* 로딩 오버레이 */
+.loadingOverlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.7);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1500;
+  animation: fadeIn 0.3s ease-out;
+}
+
+.loadingSpinner {
+  background: var(--bg-primary);
+  border-radius: 24px;
+  padding: 48px 60px;
+  box-shadow: 0 20px 60px var(--shadow-lg);
+  border: 2px solid var(--border-color);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 24px;
+  animation: slideUp 0.4s ease-out;
+  min-width: 320px;
+}
+
+.spinner {
+  width: 60px;
+  height: 60px;
+  border: 5px solid var(--border-color);
+  border-top-color: var(--accent-color);
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+  box-shadow: 0 0 20px var(--glow);
+}
+
+.loadingText {
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--text-primary);
+  margin: 0;
+  letter-spacing: 0.02em;
+}
+
+.progressBar {
+  width: 100%;
+  height: 8px;
+  background: var(--bg-hover);
+  border-radius: 4px;
+  overflow: hidden;
+  box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.progressFill {
+  height: 100%;
+  background: var(--accent-gradient);
+  border-radius: 4px;
+  animation: progressAnimation 2s ease-in-out infinite;
+  box-shadow: 0 0 12px var(--glow);
+}
+
+@keyframes progressAnimation {
+  0% {
+    width: 0%;
+  }
+  50% {
+    width: 70%;
+  }
+  100% {
+    width: 100%;
+  }
+}
+
 .error {
   padding: 15px 20px;
   background-color: var(--error-bg);
@@ -500,6 +578,78 @@
   border-radius: 8px;
   color: var(--error-text);
   margin-bottom: 20px;
+}
+
+/* 검색 결과 없음 */
+.noResults {
+  text-align: center;
+  padding: 80px 40px;
+  background: var(--bg-secondary);
+  border-radius: 24px;
+  border: 2px dashed var(--border-color);
+  margin: 40px 0;
+  animation: fadeIn 0.5s ease-out;
+}
+
+.noResultsIcon {
+  font-size: 80px;
+  margin-bottom: 24px;
+  opacity: 0.6;
+  animation: float 3s ease-in-out infinite;
+}
+
+@keyframes float {
+  0%, 100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-10px);
+  }
+}
+
+.noResultsTitle {
+  font-size: 28px;
+  font-weight: 800;
+  color: var(--text-primary);
+  margin-bottom: 12px;
+}
+
+.noResultsText {
+  font-size: 16px;
+  color: var(--text-secondary);
+  margin-bottom: 32px;
+  line-height: 1.6;
+}
+
+.noResultsTips {
+  display: inline-block;
+  text-align: left;
+  list-style: none;
+  padding: 24px 32px;
+  background: var(--bg-hover);
+  border-radius: 16px;
+  border: 1px solid var(--border-color);
+  margin: 0;
+}
+
+.noResultsTips li {
+  font-size: 15px;
+  color: var(--text-secondary);
+  margin-bottom: 12px;
+  padding-left: 28px;
+  position: relative;
+  line-height: 1.5;
+}
+
+.noResultsTips li:last-child {
+  margin-bottom: 0;
+}
+
+.noResultsTips li::before {
+  content: '💡';
+  position: absolute;
+  left: 0;
+  font-size: 18px;
 }
 
 /* 날짜 필터 */
@@ -645,11 +795,7 @@
 .perfValue {
   font-size: 20px;
   font-weight: 800;
-  color: var(--text-primary);
-  background: var(--accent-gradient);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
+  color: var(--accent-color);
 }
 
 .controls {
@@ -709,7 +855,7 @@
 }
 
 .bookmarkFilterButton.active {
-  background: linear-gradient(135deg, #fbbf24, #f59e0b);
+  background: #f59e0b;
   color: white;
   border-color: #f59e0b;
   box-shadow: 0 4px 12px rgba(251, 191, 36, 0.4);
@@ -981,7 +1127,7 @@
 
 /* 키워드 하이라이트 */
 .highlight {
-  background: linear-gradient(135deg, #fef3c7, #fde68a);
+  background: #fde68a;
   color: #92400e;
   padding: 2px 6px;
   border-radius: 4px;
@@ -991,7 +1137,7 @@
 }
 
 [data-theme="dark"] .highlight {
-  background: linear-gradient(135deg, #78350f, #92400e);
+  background: #92400e;
   color: #fef3c7;
 }
 

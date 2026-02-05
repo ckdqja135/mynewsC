@@ -4,24 +4,62 @@ __pycache__/
 *$py.class
 *.so
 .Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
 venv/
 env/
-*.egg-info/
-dist/
-build/
+ENV/
+.venv
+
+# FastAPI/Backend
+backend/data/
+*.db
+*.sqlite
+*.sqlite3
 
 # Environment variables
 .env
 .env.local
 .env.*.local
+.env.development.local
+.env.test.local
+.env.production.local
 
 # Next.js
 frontend/.next/
 frontend/out/
-frontend/node_modules/
-frontend/.env.local
+frontend/build
+frontend/dist
 
-# IDE
+# Node
+frontend/node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# Testing
+.coverage
+.pytest_cache/
+htmlcov/
+.tox/
+.hypothesis/
+
+# IDEs
 .vscode/
 .idea/
 *.swp
@@ -34,3 +72,20 @@ Thumbs.db
 
 # Logs
 *.log
+logs/
+
+# Jupyter Notebook
+.ipynb_checkpoints
+
+# pyenv
+.python-version
+
+# mypy
+.mypy_cache/
+.dmypy.json
+dmyp.json
+
+# Temporary files
+*.tmp
+*.temp
+.cache/

@@ -32,6 +32,7 @@ export default function Home() {
   // 성능 정보
   const [searchTime, setSearchTime] = useState<number>(0);
   const [lastSearchQuery, setLastSearchQuery] = useState<string>('');
+  const [lastSearchMode, setLastSearchMode] = useState<SearchMode | null>(null);
 
   // 검색 히스토리
   const [searchHistory, setSearchHistory] = useState<string[]>([]);
@@ -232,11 +233,13 @@ export default function Home() {
 
       const endTime = performance.now();
       setSearchTime((endTime - startTime) / 1000); // Convert to seconds
+      setLastSearchMode(mode); // 검색 완료 후 검색 모드 저장
     } catch (err) {
       setError(err instanceof Error ? err.message : '뉴스를 불러오는데 실패했습니다');
       setArticles([]);
       setTotal(0);
       setSearchTime(0);
+      setLastSearchMode(null);
     } finally {
       setLoading(false);
     }
@@ -552,6 +555,19 @@ export default function Home() {
           </button>
         </form>
 
+        {/* 검색 중 로딩 표시 */}
+        {loading && (
+          <div className={styles.loadingOverlay}>
+            <div className={styles.loadingSpinner}>
+              <div className={styles.spinner}></div>
+              <p className={styles.loadingText}>검색 중입니다...</p>
+              <div className={styles.progressBar}>
+                <div className={styles.progressFill}></div>
+              </div>
+            </div>
+          </div>
+        )}
+
         {error && (
           <div className={styles.error}>
             {error}
@@ -614,8 +630,8 @@ export default function Home() {
               )}
             </div>
 
-            {/* 성능 정보 표시 */}
-            {searchTime > 0 && (
+            {/* 성능 정보 표시 - 현재 검색 모드와 마지막 검색 모드가 일치할 때만 표시 */}
+            {searchTime > 0 && lastSearchMode === searchMode && (
               <div className={styles.performanceInfo}>
                 <div className={styles.perfCard}>
                   <span className={styles.perfLabel}>⚡ 검색 시간</span>
@@ -734,6 +750,22 @@ export default function Home() {
               </div>
             )}
           </>
+        )}
+
+        {/* 검색 결과 없음 메시지 */}
+        {!loading && !error && articles.length === 0 && lastSearchQuery && (
+          <div className={styles.noResults}>
+            <div className={styles.noResultsIcon}>🔍</div>
+            <h3 className={styles.noResultsTitle}>검색 결과가 없습니다</h3>
+            <p className={styles.noResultsText}>
+              &quot;{lastSearchQuery}&quot;에 대한 검색 결과를 찾을 수 없습니다.
+            </p>
+            <ul className={styles.noResultsTips}>
+              <li>다른 키워드로 검색해보세요</li>
+              <li>검색어의 철자를 확인해보세요</li>
+              <li>더 일반적인 검색어를 사용해보세요</li>
+            </ul>
+          </div>
         )}
 
         <div className={`${styles.articles} ${styles[viewMode]}`}>
