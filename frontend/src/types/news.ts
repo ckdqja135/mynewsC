@@ -42,3 +42,38 @@ export interface ApiError {
 }
 
 export type SearchMode = 'keyword' | 'semantic';
+
+// LLM Analysis Types
+export type AnalysisType = 'comprehensive' | 'sentiment' | 'trend' | 'key_points';
+
+export interface SentimentAnalysis {
+  overall_sentiment: string;
+  sentiment_score: number;
+  positive_aspects: string[];
+  negative_aspects: string[];
+}
+
+export interface TrendAnalysis {
+  main_topics: string[];
+  emerging_trends: string[];
+  key_entities: string[];
+}
+
+export interface NewsAnalysisRequest {
+  q: string;
+  hl?: string;
+  gl?: string;
+  num?: number;
+  analysis_type?: AnalysisType;
+}
+
+export interface NewsAnalysisResponse {
+  query: string;
+  analysis_type: string;
+  articles_analyzed: number;
+  summary: string;
+  key_points: string[];
+  sentiment: SentimentAnalysis | null;
+  trends: TrendAnalysis | null;
+  generated_at: string;
+}

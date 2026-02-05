@@ -72,3 +72,47 @@ class SemanticSearchResponse(BaseModel):
     articles: list[NewsArticleWithScore]
     total: int
     query: str
+
+
+# LLM Analysis Models
+class NewsAnalysisRequest(BaseModel):
+    q: str = Field(..., min_length=1, max_length=200, description="Search query")
+    hl: str = Field(default="ko", pattern="^[a-z]{2}$", description="Language code")
+    gl: str = Field(default="kr", pattern="^[a-z]{2}$", description="Country code")
+    num: int = Field(default=20, ge=1, le=100, description="Number of articles to analyze")
+    analysis_type: str = Field(
+        default="comprehensive",
+        pattern="^(comprehensive|trend|sentiment|key_points)$",
+        description="Type of analysis: comprehensive, trend, sentiment, or key_points"
+    )
+
+    @field_validator("q")
+    @classmethod
+    def validate_query(cls, v: str) -> str:
+        if not v or v.strip() == "":
+            raise ValueError("Query cannot be empty")
+        return v.strip()
+
+
+class SentimentAnalysis(BaseModel):
+    overall_sentiment: str = Field(description="Overall sentiment: positive, negative, or neutral")
+    sentiment_score: float = Field(description="Sentiment score from -1 (negative) to 1 (positive)")
+    positive_aspects: list[str] = Field(description="Positive aspects mentioned in articles")
+    negative_aspects: list[str] = Field(description="Negative aspects mentioned in articles")
+
+
+class TrendAnalysis(BaseModel):
+    main_topics: list[str] = Field(description="Main topics and themes")
+    emerging_trends: list[str] = Field(description="Emerging trends and patterns")
+    key_entities: list[str] = Field(description="Key people, organizations, or entities mentioned")
+
+
+class NewsAnalysisResponse(BaseModel):
+    query: str
+    analysis_type: str
+    articles_analyzed: int
+    summary: str = Field(description="Overall summary of the analysis")
+    key_points: list[str] = Field(description="Key takeaways and insights")
+    sentiment: Optional[SentimentAnalysis] = None
+    trends: Optional[TrendAnalysis] = None
+    generated_at: datetime = Field(default_factory=datetime.now)

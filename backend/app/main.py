@@ -8,7 +8,9 @@ from app.models import (
     NewsSearchResponse,
     SemanticSearchRequest,
     SemanticSearchResponse,
-    NewsArticleWithScore
+    NewsArticleWithScore,
+    NewsAnalysisRequest,
+    NewsAnalysisResponse
 )
 from app.services.news_crawler import NewsCrawler
 from app.middleware.rate_limit import RateLimitMiddleware
@@ -63,6 +65,16 @@ except Exception as e:
     import logging
     logging.warning(f"Failed to initialize embedding service: {str(e)}")
     logging.warning("Semantic search will not be available")
+
+# LLM Service (for news analysis)
+llm_service = None
+try:
+    from app.services.llm_service import get_llm_service
+    llm_service = get_llm_service()
+except Exception as e:
+    import logging
+    logging.warning(f"Failed to initialize LLM service: {str(e)}")
+    logging.warning("News analysis will not be available")
 
 
 @app.get("/health")
@@ -320,3 +332,139 @@ async def debug_serpapi(q: str = "test"):
             return {"error": "No results found"}
         except Exception as e:
             return {"error": str(e)}
+
+
+@app.post("/api/news/analyze", response_model=NewsAnalysisResponse)
+async def analyze_news(request: NewsAnalysisRequest):
+    """
+    Analyze news articles using Cerebras LLM for insights and trends.
+
+    - **q**: Search query (required, 1-200 characters)
+    - **hl**: Language code (default: ko)
+    - **gl**: Country code (default: kr)
+    - **num**: Number of articles to analyze (max 100, default 20)
+    - **analysis_type**: Type of analysis
+        - "comprehensive": Full analysis with sentiment, trends, and key points
+        - "sentiment": Sentiment analysis only
+        - "trend": Trend and pattern analysis only
+        - "key_points": Extract key points only
+
+    Returns:
+    - **summary**: Overall summary of the analysis
+    - **key_points**: List of key insights
+    - **sentiment**: Sentiment analysis (if requested)
+    - **trends**: Trend analysis (if requested)
+    """
+    if not llm_service:
+        raise HTTPException(
+            status_code=503,
+            detail="News analysis is not available. LLM service failed to initialize."
+        )
+
+    try:
+        import asyncio
+
+        # Fetch from all sources concurrently
+        tasks = []
+
+        # 1. Google News (SerpAPI)
+        tasks.append(crawler.search_news(
+            query=request.q,
+            language=request.hl,
+            country=request.gl,
+            num=min(request.num, 100)
+        ))
+
+        # 2. Naver API (if available)
+        if naver_service:
+            tasks.append(naver_service.search_news(
+                query=request.q,
+                display=min(request.num, 100)
+            ))
+
+        # 3. RSS Feeds
+        tasks.append(rss_parser.search_news(
+            query=request.q,
+            max_per_feed=30
+        ))
+
+        # Wait for all sources
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+
+        # Combine results
+        all_articles = []
+        for result in results:
+            if isinstance(result, list):
+                all_articles.extend(result)
+
+        print(f"[DEBUG] Analysis - Fetched {len(all_articles)} articles total")
+
+        # Remove duplicates
+        seen_ids = set()
+        unique_articles = []
+        for article in all_articles:
+            if article.id not in seen_ids:
+                seen_ids.add(article.id)
+                unique_articles.append(article)
+
+        print(f"[DEBUG] Analysis - After deduplication: {len(unique_articles)} unique articles")
+
+        if not unique_articles:
+            raise HTTPException(
+                status_code=404,
+                detail="No articles found for the given query"
+            )
+
+        # Sort by date (newest first)
+        from datetime import datetime, timezone
+        def get_sort_key(article):
+            if article.publishedAt:
+                if article.publishedAt.tzinfo is None:
+                    return article.publishedAt.replace(tzinfo=timezone.utc)
+                return article.publishedAt
+            return datetime(1970, 1, 1, tzinfo=timezone.utc)
+
+        unique_articles.sort(key=get_sort_key, reverse=True)
+
+        # Limit to requested number
+        articles_to_analyze = unique_articles[:request.num]
+
+        # Perform analysis based on type
+        if request.analysis_type == "comprehensive":
+            analysis_result = await llm_service.analyze_comprehensive(
+                query=request.q,
+                articles=articles_to_analyze
+            )
+        elif request.analysis_type == "sentiment":
+            analysis_result = await llm_service.analyze_sentiment(
+                query=request.q,
+                articles=articles_to_analyze
+            )
+        elif request.analysis_type == "trend":
+            analysis_result = await llm_service.analyze_trends(
+                query=request.q,
+                articles=articles_to_analyze
+            )
+        elif request.analysis_type == "key_points":
+            analysis_result = await llm_service.extract_key_points(
+                query=request.q,
+                articles=articles_to_analyze
+            )
+        else:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Invalid analysis_type: {request.analysis_type}"
+            )
+
+        print(f"[DEBUG] Analysis completed: {request.analysis_type}")
+        return analysis_result
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to analyze news: {str(e)}"
+        )

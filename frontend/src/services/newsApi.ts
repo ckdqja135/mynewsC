@@ -4,6 +4,8 @@ import type {
   NewsSearchResponse,
   SemanticSearchRequest,
   SemanticSearchResponse,
+  NewsAnalysisRequest,
+  NewsAnalysisResponse,
   ApiError
 } from '@/types/news';
 
@@ -61,6 +63,39 @@ export class NewsApiService {
             errorData?.detail ||
             errorData?.error ||
             'Failed to fetch news';
+
+          throw new Error(errorMessage);
+        } else if (axiosError.request) {
+          throw new Error('No response from server. Please check your connection.');
+        }
+      }
+
+      throw new Error('An unexpected error occurred');
+    }
+  }
+
+  // LLM 뉴스 분석
+  static async analyzeNews(params: NewsAnalysisRequest): Promise<NewsAnalysisResponse> {
+    try {
+      const response = await apiClient.post<NewsAnalysisResponse>(
+        '/api/news/analyze',
+        params,
+        {
+          timeout: 120000, // 2분 (LLM 분석은 시간이 더 걸릴 수 있음)
+        }
+      );
+      return response.data;
+    } catch (error) {
+      if (axios.isAxiosError(error)) {
+        const axiosError = error as AxiosError<ApiError>;
+
+        if (axiosError.response) {
+          const errorData = axiosError.response.data;
+          const errorMessage =
+            errorData?.message ||
+            errorData?.detail ||
+            errorData?.error ||
+            'Failed to analyze news';
 
           throw new Error(errorMessage);
         } else if (axiosError.request) {

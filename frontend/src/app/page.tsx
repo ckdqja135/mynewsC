@@ -4,6 +4,7 @@ import { useState, useEffect, useMemo } from 'react';
 import { NewsApiService } from '@/services/newsApi';
 import type { NewsArticle, NewsArticleWithScore, SearchMode } from '@/types/news';
 import styles from './page.module.css';
+import Link from 'next/link';
 
 type ViewMode = 'list' | 'grid';
 type SortOrder = 'desc' | 'asc';
@@ -436,8 +437,13 @@ export default function Home() {
       </div>
 
       <header className={styles.header}>
-        <h1>뉴스 검색</h1>
-        <p>구글 뉴스에서 기사를 검색해보세요</p>
+        <div className={styles.headerContent}>
+          <h1>뉴스 검색</h1>
+          <p>구글 뉴스에서 기사를 검색해보세요</p>
+        </div>
+        <Link href="/analyze" className={styles.analyzeLink}>
+          🤖 AI 뉴스 분석
+        </Link>
       </header>
 
       <main className={styles.main}>
