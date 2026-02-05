@@ -9,6 +9,9 @@ import pickle
 import os
 from pathlib import Path
 
+# Set HuggingFace timeout to 300 seconds (5 minutes)
+os.environ['HF_HUB_DOWNLOAD_TIMEOUT'] = '300'
+
 logger = logging.getLogger(__name__)
 
 

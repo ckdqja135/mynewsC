@@ -21,21 +21,25 @@ class CerebrasLLMService:
             api_key=api_key,
             base_url="https://api.cerebras.ai/v1"
         )
-        # Cerebras models: llama3.1-8b, llama3.1-70b
-        self.model = "llama3.1-70b"  # Use 70b for better quality analysis
+        # Cerebras models: llama3.1-8b, llama3.3-70b
+        self.model = "llama3.1-8b"  # Use 8b for stable, fast analysis
 
-    def _prepare_articles_context(self, articles: List[NewsArticle], max_articles: int = 20) -> str:
+    def _prepare_articles_context(self, articles: List[NewsArticle], max_articles: int = 10) -> str:
         """Prepare articles as context for LLM"""
         context_parts = []
 
         for idx, article in enumerate(articles[:max_articles], 1):
+            # Limit snippet length to avoid token limits
+            snippet = article.snippet or 'No content available'
+            if len(snippet) > 200:
+                snippet = snippet[:200] + "..."
+
             article_text = f"""
 [Article {idx}]
 Title: {article.title}
 Source: {article.source}
-Date: {article.publishedAt.strftime('%Y-%m-%d %H:%M') if article.publishedAt else 'Unknown'}
-Content: {article.snippet or 'No content available'}
-URL: {article.url}
+Date: {article.publishedAt.strftime('%Y-%m-%d') if article.publishedAt else 'Unknown'}
+Content: {snippet}
 """
             context_parts.append(article_text.strip())
 

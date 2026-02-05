@@ -415,8 +415,10 @@ async def analyze_news(request: NewsAnalysisRequest):
                 detail="No articles found for the given query"
             )
 
-        # Sort by date (newest first)
-        from datetime import datetime, timezone
+        # Filter by date (last N days)
+        from datetime import datetime, timezone, timedelta
+        cutoff_date = datetime.now(timezone.utc) - timedelta(days=request.days_back)
+
         def get_sort_key(article):
             if article.publishedAt:
                 if article.publishedAt.tzinfo is None:
@@ -424,10 +426,26 @@ async def analyze_news(request: NewsAnalysisRequest):
                 return article.publishedAt
             return datetime(1970, 1, 1, tzinfo=timezone.utc)
 
-        unique_articles.sort(key=get_sort_key, reverse=True)
+        # Filter articles within date range
+        filtered_articles = []
+        for article in unique_articles:
+            article_date = get_sort_key(article)
+            if article_date >= cutoff_date:
+                filtered_articles.append(article)
+
+        print(f"[DEBUG] Analysis - After date filtering (last {request.days_back} days): {len(filtered_articles)} articles")
+
+        if not filtered_articles:
+            raise HTTPException(
+                status_code=404,
+                detail=f"No articles found in the last {request.days_back} days for the given query"
+            )
+
+        # Sort by date (newest first)
+        filtered_articles.sort(key=get_sort_key, reverse=True)
 
         # Limit to requested number
-        articles_to_analyze = unique_articles[:request.num]
+        articles_to_analyze = filtered_articles[:request.num]
 
         # Perform analysis based on type
         if request.analysis_type == "comprehensive":

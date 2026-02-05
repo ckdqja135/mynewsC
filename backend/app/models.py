@@ -85,6 +85,12 @@ class NewsAnalysisRequest(BaseModel):
         pattern="^(comprehensive|trend|sentiment|key_points)$",
         description="Type of analysis: comprehensive, trend, sentiment, or key_points"
     )
+    days_back: int = Field(
+        default=30,
+        ge=1,
+        le=365,
+        description="Number of days to look back for articles (default: 30 days)"
+    )
 
     @field_validator("q")
     @classmethod
