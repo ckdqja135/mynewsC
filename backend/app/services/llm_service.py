@@ -24,15 +24,15 @@ class CerebrasLLMService:
         # Cerebras models: llama3.1-8b, llama3.3-70b
         self.model = "llama3.1-8b"  # Use 8b for stable, fast analysis
 
-    def _prepare_articles_context(self, articles: List[NewsArticle], max_articles: int = 10) -> str:
+    def _prepare_articles_context(self, articles: List[NewsArticle], max_articles: int = 20) -> str:
         """Prepare articles as context for LLM"""
         context_parts = []
 
         for idx, article in enumerate(articles[:max_articles], 1):
             # Limit snippet length to avoid token limits
             snippet = article.snippet or 'No content available'
-            if len(snippet) > 200:
-                snippet = snippet[:200] + "..."
+            if len(snippet) > 150:
+                snippet = snippet[:150] + "..."
 
             article_text = f"""
 [Article {idx}]
@@ -49,7 +49,15 @@ Content: {snippet}
         """Comprehensive analysis including sentiment, trends, and key points"""
         context = self._prepare_articles_context(articles)
 
-        prompt = f"""You are a professional news analyst. Analyze the following news articles about "{query}" and provide a comprehensive analysis.
+        # Get date range
+        dates = [a.publishedAt for a in articles if a.publishedAt]
+        date_range = ""
+        if dates:
+            earliest = min(dates).strftime('%Y-%m-%d')
+            latest = max(dates).strftime('%Y-%m-%d')
+            date_range = f" (Articles from {earliest} to {latest})"
+
+        prompt = f"""You are a professional news analyst. Analyze the following news articles about "{query}"{date_range} and provide a comprehensive analysis.
 
 {context}
 

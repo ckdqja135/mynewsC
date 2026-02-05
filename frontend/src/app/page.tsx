@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useMemo } from 'react';
 import { NewsApiService } from '@/services/newsApi';
-import type { NewsArticle, NewsArticleWithScore, SearchMode } from '@/types/news';
+import type { NewsArticle, NewsArticleWithScore, SearchMode, NewsAnalysisResponse } from '@/types/news';
 import styles from './page.module.css';
 import Link from 'next/link';
 
@@ -53,6 +53,15 @@ export default function Home() {
   const [defaultSearchMode, setDefaultSearchMode] = useState<SearchMode>('keyword');
   const [defaultMinSimilarity, setDefaultMinSimilarity] = useState<number>(0.3);
   const [autoSearchEnabled, setAutoSearchEnabled] = useState<boolean>(false);
+
+  // AI 분석 상태
+  const [analysisData, setAnalysisData] = useState<NewsAnalysisResponse | null>(null);
+  const [analysisLoading, setAnalysisLoading] = useState<boolean>(false);
+  const [analysisError, setAnalysisError] = useState<string>('');
+  const [showAnalysisPanel, setShowAnalysisPanel] = useState<boolean>(true);
+
+  // 모바일 탭 상태 (검색 결과 / 분석 결과)
+  const [mobileTab, setMobileTab] = useState<'results' | 'analysis'>('results');
 
   useEffect(() => {
     const savedTheme = localStorage.getItem('theme') as Theme;
@@ -186,6 +195,31 @@ export default function Home() {
     setShowSettings(false);
   };
 
+  const performAnalysis = async (searchQuery: string) => {
+    setAnalysisLoading(true);
+    setAnalysisError('');
+    setMobileTab('results'); // 분석 시작 시 결과 탭으로
+
+    try {
+      const response = await NewsApiService.analyzeNews({
+        q: searchQuery,
+        hl: 'ko',
+        gl: 'kr',
+        num: 50,  // Analyze up to 50 articles
+        analysis_type: 'comprehensive',
+        days_back: 30,  // Analyze articles from the last 30 days
+      });
+
+      setAnalysisData(response);
+      setShowAnalysisPanel(true);
+    } catch (err) {
+      setAnalysisError(err instanceof Error ? err.message : '뉴스 분석에 실패했습니다');
+      setAnalysisData(null);
+    } finally {
+      setAnalysisLoading(false);
+    }
+  };
+
   const performSearch = async (searchQuery: string, mode: SearchMode) => {
     if (!searchQuery.trim()) {
       setError('검색어를 입력해주세요');
@@ -199,6 +233,10 @@ export default function Home() {
     setDisplayedCount(itemsPerPage);
     setLastSearchQuery(searchQuery);
     setShowHistory(false);
+
+    // 분석 데이터 초기화
+    setAnalysisData(null);
+    setAnalysisError('');
 
     // 검색 히스토리에 추가
     addToSearchHistory(searchQuery);
@@ -218,6 +256,11 @@ export default function Home() {
 
         setArticles(response.articles);
         setTotal(response.total);
+
+        // 시맨틱 검색 완료 후 자동으로 분석 실행
+        if (response.articles.length > 0) {
+          performAnalysis(searchQuery);
+        }
       } else {
         // 키워드 검색
         const response = await NewsApiService.searchNews({
@@ -444,9 +487,6 @@ export default function Home() {
           <h1>뉴스 검색</h1>
           <p>구글 뉴스에서 기사를 검색해보세요</p>
         </div>
-        <Link href="/analyze" className={styles.analyzeLink}>
-          🤖 AI 뉴스 분석
-        </Link>
       </header>
 
       <main className={styles.main}>
@@ -768,7 +808,29 @@ export default function Home() {
           </div>
         )}
 
-        <div className={`${styles.articles} ${styles[viewMode]}`}>
+        {/* 모바일 탭 (시맨틱 검색 시) */}
+        {searchMode === 'semantic' && total > 0 && (
+          <div className={styles.mobileTabs}>
+            <button
+              className={`${styles.mobileTab} ${mobileTab === 'results' ? styles.active : ''}`}
+              onClick={() => setMobileTab('results')}
+            >
+              검색 결과 ({filteredAndSortedArticles.length})
+            </button>
+            <button
+              className={`${styles.mobileTab} ${mobileTab === 'analysis' ? styles.active : ''}`}
+              onClick={() => setMobileTab('analysis')}
+            >
+              AI 분석
+            </button>
+          </div>
+        )}
+
+        {/* 2컬럼 레이아웃 (시맨틱 검색 시) */}
+        <div className={`${searchMode === 'semantic' && total > 0 ? styles.twoColumnLayout : ''} ${mobileTab === 'analysis' ? styles.showAnalysis : ''}`}>
+          {/* 검색 결과 영역 */}
+          <div className={styles.resultsColumn}>
+            <div className={`${styles.articles} ${styles[viewMode]}`}>
           {displayedArticles.map((article) => {
             const articleWithScore = article as NewsArticleWithScore;
             const hasSimilarityScore = 'similarity_score' in article && searchMode === 'semantic';
@@ -890,6 +952,180 @@ export default function Home() {
             </button>
           </div>
         )}
+          </div>
+
+          {/* AI 분석 패널 (시맨틱 검색 시) */}
+          {searchMode === 'semantic' && total > 0 && (
+            <div className={styles.analysisColumn}>
+              <div className={styles.analysisPanel}>
+                <div className={styles.analysisPanelHeader}>
+                  <h3>AI 뉴스 분석</h3>
+                  <button
+                    className={styles.toggleAnalysisButton}
+                    onClick={() => setShowAnalysisPanel(!showAnalysisPanel)}
+                    aria-label={showAnalysisPanel ? '패널 접기' : '패널 펼치기'}
+                  >
+                    {showAnalysisPanel ? '▼' : '▲'}
+                  </button>
+                </div>
+
+                {showAnalysisPanel && (
+                  <div className={styles.analysisPanelContent}>
+                    {analysisLoading && (
+                      <div className={styles.analysisLoading}>
+                        <div className={styles.spinner}></div>
+                        <p>AI가 뉴스를 분석하고 있습니다...</p>
+                      </div>
+                    )}
+
+                    {analysisError && (
+                      <div className={styles.analysisError}>
+                        {analysisError}
+                      </div>
+                    )}
+
+                    {analysisData && !analysisLoading && (
+                      <>
+                        {/* 요약 */}
+                        <div className={styles.analysisSection}>
+                          <h4>요약</h4>
+                          <p className={styles.analysisSummary}>{analysisData.summary}</p>
+                        </div>
+
+                        {/* 주요 포인트 */}
+                        {analysisData.key_points && analysisData.key_points.length > 0 && (
+                          <div className={styles.analysisSection}>
+                            <h4>주요 포인트</h4>
+                            <ul className={styles.analysisKeyPoints}>
+                              {analysisData.key_points.map((point, index) => (
+                                <li key={index}>{point}</li>
+                              ))}
+                            </ul>
+                          </div>
+                        )}
+
+                        {/* 감정 분석 */}
+                        {analysisData.sentiment && (
+                          <div className={styles.analysisSection}>
+                            <h4>감정 분석</h4>
+                            <div className={styles.sentimentInfo}>
+                              <div className={styles.sentimentOverall}>
+                                <span className={styles.sentimentLabel}>전체 감정:</span>
+                                <span className={styles.sentimentValue}>
+                                  {analysisData.sentiment.overall_sentiment}
+                                </span>
+                              </div>
+                              <div className={styles.sentimentScoreBar}>
+                                <div className={styles.scoreBarContainer}>
+                                  <div
+                                    className={styles.scoreBarFill}
+                                    style={{
+                                      width: `${Math.abs(analysisData.sentiment.sentiment_score) * 50}%`,
+                                      marginLeft: analysisData.sentiment.sentiment_score < 0
+                                        ? `${50 - Math.abs(analysisData.sentiment.sentiment_score) * 50}%`
+                                        : '50%',
+                                      backgroundColor: analysisData.sentiment.sentiment_score > 0
+                                        ? '#4caf50'
+                                        : analysisData.sentiment.sentiment_score < 0
+                                        ? '#f44336'
+                                        : '#9e9e9e'
+                                    }}
+                                  ></div>
+                                </div>
+                                <div className={styles.scoreBarLabels}>
+                                  <span>부정</span>
+                                  <span>중립</span>
+                                  <span>긍정</span>
+                                </div>
+                              </div>
+
+                              {analysisData.sentiment.positive_aspects && analysisData.sentiment.positive_aspects.length > 0 && (
+                                <div className={styles.sentimentAspects}>
+                                  <strong>✅ 긍정적 측면:</strong>
+                                  <ul>
+                                    {analysisData.sentiment.positive_aspects.map((aspect, idx) => (
+                                      <li key={idx}>{aspect}</li>
+                                    ))}
+                                  </ul>
+                                </div>
+                              )}
+
+                              {analysisData.sentiment.negative_aspects && analysisData.sentiment.negative_aspects.length > 0 && (
+                                <div className={styles.sentimentAspects}>
+                                  <strong>⚠️ 부정적 측면:</strong>
+                                  <ul>
+                                    {analysisData.sentiment.negative_aspects.map((aspect, idx) => (
+                                      <li key={idx}>{aspect}</li>
+                                    ))}
+                                  </ul>
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        )}
+
+                        {/* 트렌드 분석 */}
+                        {analysisData.trends && (
+                          <div className={styles.analysisSection}>
+                            <h4>트렌드</h4>
+                            <div className={styles.trendsInfo}>
+                              {analysisData.trends.main_topics.length > 0 && (
+                                <div className={styles.trendItem}>
+                                  <strong>주요 주제:</strong>
+                                  <div className={styles.trendTags}>
+                                    {analysisData.trends.main_topics.map((topic, idx) => (
+                                      <span key={idx} className={styles.trendTag}>{topic}</span>
+                                    ))}
+                                  </div>
+                                </div>
+                              )}
+
+                              {analysisData.trends.emerging_trends.length > 0 && (
+                                <div className={styles.trendItem}>
+                                  <strong>떠오르는 트렌드:</strong>
+                                  <div className={styles.trendTags}>
+                                    {analysisData.trends.emerging_trends.map((trend, idx) => (
+                                      <span key={idx} className={styles.trendTag}>{trend}</span>
+                                    ))}
+                                  </div>
+                                </div>
+                              )}
+
+                              {analysisData.trends.key_entities.length > 0 && (
+                                <div className={styles.trendItem}>
+                                  <strong>주요 키워드:</strong>
+                                  <div className={styles.trendTags}>
+                                    {analysisData.trends.key_entities.map((entity, idx) => (
+                                      <span key={idx} className={styles.trendTag}>{entity}</span>
+                                    ))}
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        )}
+
+                        {/* 분석 메타 정보 */}
+                        <div className={styles.analysisMeta}>
+                          <small>
+                            {analysisData.articles_analyzed}개 기사 분석 완료 ·{' '}
+                            {new Date(analysisData.generated_at).toLocaleString('ko-KR')}
+                          </small>
+                        </div>
+                      </>
+                    )}
+
+                    {!analysisData && !analysisLoading && !analysisError && (
+                      <div className={styles.analysisPlaceholder}>
+                        <p>검색 결과를 분석 중입니다...</p>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+        </div>
       </main>
 
       {/* 설정 모달 */}

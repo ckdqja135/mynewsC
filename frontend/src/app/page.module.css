@@ -1580,3 +1580,393 @@
   transform: translateY(-2px);
   box-shadow: 0 8px 20px var(--glow);
 }
+
+/* 모바일 탭 (시맨틱 검색 시) */
+.mobileTabs {
+  display: none;
+  gap: 8px;
+  margin-bottom: 20px;
+  background: var(--bg-secondary);
+  padding: 8px;
+  border-radius: 12px;
+  box-shadow: 0 2px 8px var(--shadow);
+}
+
+.mobileTab {
+  flex: 1;
+  padding: 12px 16px;
+  background: transparent;
+  color: var(--text-secondary);
+  border: none;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.mobileTab.active {
+  background: var(--accent-color);
+  color: white;
+  box-shadow: 0 2px 8px var(--glow);
+}
+
+/* 2컬럼 레이아웃 */
+.twoColumnLayout {
+  display: flex;
+  gap: 20px;
+  align-items: flex-start;
+}
+
+.resultsColumn {
+  flex: 1;
+  min-width: 0;
+}
+
+.analysisColumn {
+  width: 400px;
+  position: sticky;
+  top: 20px;
+  max-height: calc(100vh - 40px);
+  overflow-y: auto;
+  flex-shrink: 0;
+}
+
+/* 분석 패널 */
+.analysisPanel {
+  background: var(--bg-secondary);
+  border-radius: 12px;
+  box-shadow: 0 4px 12px var(--shadow-md);
+  overflow: hidden;
+}
+
+.analysisPanelHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 16px 20px;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+}
+
+.analysisPanelHeader h3 {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 700;
+}
+
+.toggleAnalysisButton {
+  background: rgba(255, 255, 255, 0.2);
+  border: none;
+  color: white;
+  width: 32px;
+  height: 32px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s ease;
+}
+
+.toggleAnalysisButton:hover {
+  background: rgba(255, 255, 255, 0.3);
+}
+
+.analysisPanelContent {
+  padding: 20px;
+  max-height: calc(100vh - 120px);
+  overflow-y: auto;
+}
+
+/* 분석 로딩 */
+.analysisLoading {
+  text-align: center;
+  padding: 40px 20px;
+  color: var(--text-secondary);
+}
+
+.analysisLoading p {
+  margin-top: 16px;
+  font-size: 14px;
+}
+
+/* 분석 에러 */
+.analysisError {
+  background: var(--error-bg);
+  color: var(--error-text);
+  padding: 16px;
+  border-radius: 8px;
+  border-left: 4px solid var(--error-text);
+  font-size: 14px;
+}
+
+/* 분석 섹션 */
+.analysisSection {
+  margin-bottom: 24px;
+}
+
+.analysisSection:last-child {
+  margin-bottom: 0;
+}
+
+.analysisSection h4 {
+  margin: 0 0 12px 0;
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--text-primary);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.analysisSection h4::before {
+  content: '';
+  width: 4px;
+  height: 16px;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  border-radius: 2px;
+}
+
+/* 분석 요약 */
+.analysisSummary {
+  line-height: 1.7;
+  color: var(--text-primary);
+  font-size: 14px;
+  background: var(--bg-hover);
+  padding: 14px;
+  border-radius: 8px;
+  border-left: 3px solid #667eea;
+}
+
+/* 분석 주요 포인트 */
+.analysisKeyPoints {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.analysisKeyPoints li {
+  padding: 10px 12px;
+  margin-bottom: 8px;
+  background: var(--bg-hover);
+  border-radius: 6px;
+  font-size: 14px;
+  line-height: 1.6;
+  color: var(--text-primary);
+  position: relative;
+  padding-left: 28px;
+}
+
+.analysisKeyPoints li::before {
+  content: '•';
+  position: absolute;
+  left: 12px;
+  color: #667eea;
+  font-weight: 900;
+  font-size: 18px;
+}
+
+/* 감정 분석 */
+.sentimentInfo {
+  background: var(--bg-hover);
+  padding: 16px;
+  border-radius: 8px;
+  font-size: 14px;
+}
+
+.sentimentOverall {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+}
+
+.sentimentLabel {
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+
+.sentimentValue {
+  font-weight: 700;
+  color: var(--text-primary);
+  background: var(--bg-secondary);
+  padding: 6px 12px;
+  border-radius: 6px;
+}
+
+.sentimentScoreBar {
+  margin: 16px 0;
+}
+
+.scoreBarContainer {
+  height: 24px;
+  background: linear-gradient(to right, #f44336 0%, #9e9e9e 50%, #4caf50 100%);
+  border-radius: 12px;
+  position: relative;
+  overflow: visible;
+  margin-bottom: 8px;
+}
+
+.scoreBarFill {
+  height: 100%;
+  border-radius: 12px;
+  transition: all 0.5s ease;
+  position: relative;
+}
+
+.scoreBarFill::after {
+  content: '';
+  position: absolute;
+  right: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 4px;
+  height: 32px;
+  background: white;
+  border-radius: 2px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+}
+
+.scoreBarLabels {
+  display: flex;
+  justify-content: space-between;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.sentimentAspects {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border-color);
+}
+
+.sentimentAspects strong {
+  display: block;
+  margin-bottom: 8px;
+  color: var(--text-primary);
+  font-size: 13px;
+}
+
+.sentimentAspects ul {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.sentimentAspects li {
+  padding: 6px 0;
+  font-size: 13px;
+  color: var(--text-secondary);
+  line-height: 1.5;
+}
+
+.sentimentAspects li::before {
+  content: '▸';
+  margin-right: 8px;
+  color: #667eea;
+}
+
+/* 트렌드 분석 */
+.trendsInfo {
+  background: var(--bg-hover);
+  padding: 16px;
+  border-radius: 8px;
+}
+
+.trendItem {
+  margin-bottom: 16px;
+}
+
+.trendItem:last-child {
+  margin-bottom: 0;
+}
+
+.trendItem strong {
+  display: block;
+  margin-bottom: 8px;
+  color: var(--text-primary);
+  font-size: 13px;
+}
+
+.trendTags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.trendTag {
+  background: linear-gradient(135deg, #667eea20 0%, #764ba220 100%);
+  color: #667eea;
+  padding: 6px 12px;
+  border-radius: 16px;
+  font-size: 12px;
+  font-weight: 600;
+  border: 1px solid #667eea40;
+}
+
+[data-theme='dark'] .trendTag {
+  background: #1a1f3a;
+  color: #8b9dc3;
+  border-color: #8b9dc350;
+}
+
+/* 분석 메타 정보 */
+.analysisMeta {
+  margin-top: 20px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border-color);
+  text-align: center;
+  color: var(--text-tertiary);
+  font-size: 12px;
+}
+
+/* 분석 플레이스홀더 */
+.analysisPlaceholder {
+  text-align: center;
+  padding: 40px 20px;
+  color: var(--text-secondary);
+  font-size: 14px;
+}
+
+/* 태블릿 반응형 */
+@media (max-width: 1200px) {
+  .analysisColumn {
+    width: 350px;
+  }
+}
+
+/* 모바일 반응형 */
+@media (max-width: 768px) {
+  .mobileTabs {
+    display: flex;
+  }
+
+  .twoColumnLayout {
+    display: block;
+  }
+
+  .resultsColumn {
+    display: block;
+  }
+
+  .analysisColumn {
+    display: none;
+    width: 100%;
+    position: static;
+    max-height: none;
+  }
+
+  .twoColumnLayout.showAnalysis .resultsColumn {
+    display: none;
+  }
+
+  .twoColumnLayout.showAnalysis .analysisColumn {
+    display: block;
+  }
+
+  .analysisPanelContent {
+    max-height: none;
+  }
+}

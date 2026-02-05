@@ -65,6 +65,7 @@ export interface NewsAnalysisRequest {
   gl?: string;
   num?: number;
   analysis_type?: AnalysisType;
+  days_back?: number;
 }
 
 export interface NewsAnalysisResponse {
