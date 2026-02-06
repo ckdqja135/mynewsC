@@ -122,7 +122,8 @@ async def search_news(request: NewsSearchRequest):
         q=request.q,
         hl=request.hl,
         gl=request.gl,
-        num=request.num
+        num=request.num,
+        excluded_sources=tuple(sorted(request.excluded_sources))
     )
 
     if cached_result is not None:
@@ -136,24 +137,32 @@ async def search_news(request: NewsSearchRequest):
         tasks = []
 
         # 1. Google News (SerpAPI) - limit to 100
-        tasks.append(crawler.search_news(
-            query=request.q,
-            language=request.hl,
-            country=request.gl,
-            num=min(request.num, 100)
-        ))
+        # Skip if 'google_news' is in excluded sources
+        if 'google_news' not in request.excluded_sources:
+            tasks.append(crawler.search_news(
+                query=request.q,
+                language=request.hl,
+                country=request.gl,
+                num=min(request.num, 100)
+            ))
+        else:
+            print("[DEBUG] Skipping Google News (excluded)")
 
         # 2. Naver API (if available) - up to 1000
-        if naver_service:
+        # Skip if 'naver' is in excluded sources
+        if naver_service and 'naver' not in request.excluded_sources:
             tasks.append(naver_service.search_news(
                 query=request.q,
                 display=min(request.num, 1000)
             ))
+        elif 'naver' in request.excluded_sources:
+            print("[DEBUG] Skipping Naver News (excluded)")
 
         # 3. RSS Feeds - 일반 검색은 빠르게 (20개/피드)
         tasks.append(rss_parser.search_news(
             query=request.q,
-            max_per_feed=20
+            max_per_feed=20,
+            excluded_sources=request.excluded_sources
         ))
 
         # Wait for all sources
@@ -166,6 +175,15 @@ async def search_news(request: NewsSearchRequest):
                 all_articles.extend(result)
 
         print(f"[DEBUG] Keyword search - Fetched {len(all_articles)} articles total")
+
+        # Filter by excluded sources (for Google News and Naver results)
+        if request.excluded_sources:
+            before_filter = len(all_articles)
+            all_articles = [
+                article for article in all_articles
+                if article.source not in request.excluded_sources
+            ]
+            print(f"[DEBUG] Filtered {before_filter - len(all_articles)} articles from excluded sources")
 
         # Remove duplicates by ID
         seen_ids = set()
@@ -203,7 +221,8 @@ async def search_news(request: NewsSearchRequest):
             q=request.q,
             hl=request.hl,
             gl=request.gl,
-            num=request.num
+            num=request.num,
+            excluded_sources=tuple(sorted(request.excluded_sources))
         )
 
         return response
@@ -255,7 +274,8 @@ async def semantic_search_news(request: SemanticSearchRequest):
         hl=request.hl,
         gl=request.gl,
         num=request.num,
-        min_similarity=request.min_similarity
+        min_similarity=request.min_similarity,
+        excluded_sources=tuple(sorted(request.excluded_sources))
     )
 
     if cached_result is not None:
@@ -269,24 +289,32 @@ async def semantic_search_news(request: SemanticSearchRequest):
         tasks = []
 
         # 1. Google News (SerpAPI) - limit to 100
-        tasks.append(crawler.search_news(
-            query=request.q,
-            language=request.hl,
-            country=request.gl,
-            num=min(request.num, 100)
-        ))
+        # Skip if 'google_news' is in excluded sources
+        if 'google_news' not in request.excluded_sources:
+            tasks.append(crawler.search_news(
+                query=request.q,
+                language=request.hl,
+                country=request.gl,
+                num=min(request.num, 100)
+            ))
+        else:
+            print("[DEBUG] Skipping Google News (excluded)")
 
         # 2. Naver API (if available) - up to 1000
-        if naver_service:
+        # Skip if 'naver' is in excluded sources
+        if naver_service and 'naver' not in request.excluded_sources:
             tasks.append(naver_service.search_news(
                 query=request.q,
                 display=min(request.num, 1000)
             ))
+        elif 'naver' in request.excluded_sources:
+            print("[DEBUG] Skipping Naver News (excluded)")
 
         # 3. RSS Feeds - 시맨틱 검색은 더 많은 데이터 (30개/피드)
         tasks.append(rss_parser.search_news(
             query=request.q,
-            max_per_feed=30
+            max_per_feed=30,
+            excluded_sources=request.excluded_sources
         ))
 
         # Wait for all sources
@@ -299,6 +327,15 @@ async def semantic_search_news(request: SemanticSearchRequest):
                 all_articles.extend(result)
 
         print(f"[DEBUG] Fetched {len(all_articles)} articles total")
+
+        # Filter by excluded sources (for Google News and Naver results)
+        if request.excluded_sources:
+            before_filter = len(all_articles)
+            all_articles = [
+                article for article in all_articles
+                if article.source not in request.excluded_sources
+            ]
+            print(f"[DEBUG] Filtered {before_filter - len(all_articles)} articles from excluded sources")
 
         # Remove duplicates by ID
         seen_ids = set()
@@ -348,7 +385,8 @@ async def semantic_search_news(request: SemanticSearchRequest):
             hl=request.hl,
             gl=request.gl,
             num=request.num,
-            min_similarity=request.min_similarity
+            min_similarity=request.min_similarity,
+            excluded_sources=tuple(sorted(request.excluded_sources))
         )
 
         return response
@@ -442,7 +480,8 @@ async def analyze_news(request: NewsAnalysisRequest):
         gl=request.gl,
         num=request.num,
         analysis_type=request.analysis_type,
-        days_back=request.days_back
+        days_back=request.days_back,
+        excluded_sources=tuple(sorted(request.excluded_sources))
     )
 
     if cached_result is not None:
@@ -456,24 +495,32 @@ async def analyze_news(request: NewsAnalysisRequest):
         tasks = []
 
         # 1. Google News (SerpAPI)
-        tasks.append(crawler.search_news(
-            query=request.q,
-            language=request.hl,
-            country=request.gl,
-            num=min(request.num, 100)
-        ))
+        # Skip if 'google_news' is in excluded sources
+        if 'google_news' not in request.excluded_sources:
+            tasks.append(crawler.search_news(
+                query=request.q,
+                language=request.hl,
+                country=request.gl,
+                num=min(request.num, 100)
+            ))
+        else:
+            print("[DEBUG] Skipping Google News (excluded)")
 
         # 2. Naver API (if available)
-        if naver_service:
+        # Skip if 'naver' is in excluded sources
+        if naver_service and 'naver' not in request.excluded_sources:
             tasks.append(naver_service.search_news(
                 query=request.q,
                 display=min(request.num, 100)
             ))
+        elif 'naver' in request.excluded_sources:
+            print("[DEBUG] Skipping Naver News (excluded)")
 
         # 3. RSS Feeds - AI 분석은 충분한 데이터 (30개/피드)
         tasks.append(rss_parser.search_news(
             query=request.q,
-            max_per_feed=30
+            max_per_feed=30,
+            excluded_sources=request.excluded_sources
         ))
 
         # Wait for all sources
@@ -486,6 +533,15 @@ async def analyze_news(request: NewsAnalysisRequest):
                 all_articles.extend(result)
 
         print(f"[DEBUG] Analysis - Fetched {len(all_articles)} articles total")
+
+        # Filter by excluded sources (for Google News and Naver results)
+        if request.excluded_sources:
+            before_filter = len(all_articles)
+            all_articles = [
+                article for article in all_articles
+                if article.source not in request.excluded_sources
+            ]
+            print(f"[DEBUG] Filtered {before_filter - len(all_articles)} articles from excluded sources")
 
         # Remove duplicates
         seen_ids = set()
@@ -572,7 +628,8 @@ async def analyze_news(request: NewsAnalysisRequest):
             gl=request.gl,
             num=request.num,
             analysis_type=request.analysis_type,
-            days_back=request.days_back
+            days_back=request.days_back,
+            excluded_sources=tuple(sorted(request.excluded_sources))
         )
 
         return analysis_result

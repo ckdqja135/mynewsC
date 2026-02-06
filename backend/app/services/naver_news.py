@@ -108,7 +108,7 @@ class NaverNewsService:
                 id=article_id,
                 title=title,
                 url=url,
-                source="네이버뉴스",
+                source="naver",
                 publishedAt=published_at,
                 snippet=description if description else None,
                 thumbnail=None

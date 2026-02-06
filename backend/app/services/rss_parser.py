@@ -80,15 +80,25 @@ class RSSParser:
         "CBS News": "https://www.cbsnews.com/latest/rss/main",
     }
 
-    async def search_news(self, query: str, max_per_feed: int = 50) -> list[NewsArticle]:
+    async def search_news(self, query: str, max_per_feed: int = 50, excluded_sources: list[str] = None) -> list[NewsArticle]:
         """
         Search news from multiple RSS feeds.
         Filters results by query keyword.
+
+        Args:
+            query: Search query
+            max_per_feed: Maximum results per feed
+            excluded_sources: List of source names to exclude from crawling
         """
         all_articles = []
+        excluded_sources = excluded_sources or []
 
         async with httpx.AsyncClient(timeout=15.0) as client:
             for source_name, feed_url in self.RSS_FEEDS.items():
+                # Skip excluded sources
+                if source_name in excluded_sources:
+                    print(f"[RSS] Skipping excluded source: {source_name}")
+                    continue
                 try:
                     articles = await self._fetch_feed(
                         client,

@@ -18,6 +18,7 @@ class NewsSearchRequest(BaseModel):
     hl: str = Field(default="ko", pattern="^[a-z]{2}$", description="Language code")
     gl: str = Field(default="kr", pattern="^[a-z]{2}$", description="Country code")
     num: int = Field(default=100, ge=1, le=500, description="Number of results (max 500)")
+    excluded_sources: list[str] = Field(default=[], description="List of sources to exclude")
 
     @field_validator("q")
     @classmethod
@@ -38,6 +39,7 @@ class SemanticSearchRequest(BaseModel):
     hl: str = Field(default="ko", pattern="^[a-z]{2}$", description="Language code")
     gl: str = Field(default="kr", pattern="^[a-z]{2}$", description="Country code")
     num: int = Field(default=100, ge=1, le=500, description="Number of results (max 500)")
+    excluded_sources: list[str] = Field(default=[], description="List of sources to exclude")
     min_similarity: float = Field(
         default=0.0,  # 기본값 0 (모든 결과 표시, 관련도순 정렬)
         ge=0.0,
@@ -91,6 +93,7 @@ class NewsAnalysisRequest(BaseModel):
         le=365,
         description="Number of days to look back for articles (default: 30 days)"
     )
+    excluded_sources: list[str] = Field(default=[], description="List of sources to exclude")
 
     @field_validator("q")
     @classmethod

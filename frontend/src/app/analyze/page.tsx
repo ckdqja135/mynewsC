@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { NewsApiService } from '@/services/newsApi';
 import type { NewsAnalysisResponse, AnalysisType } from '@/types/news';
 import styles from './analyze.module.css';
@@ -13,6 +13,22 @@ export default function AnalyzePage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [analysis, setAnalysis] = useState<NewsAnalysisResponse | null>(null);
+  const [excludedSources, setExcludedSources] = useState<Set<string>>(new Set());
+
+  useEffect(() => {
+    // Load excluded sources from localStorage
+    const savedExcludedSources = localStorage.getItem('excludedSources');
+    if (savedExcludedSources) {
+      try {
+        const parsed = JSON.parse(savedExcludedSources);
+        if (Array.isArray(parsed)) {
+          setExcludedSources(new Set(parsed));
+        }
+      } catch (e) {
+        console.error('Failed to load excluded sources:', e);
+      }
+    }
+  }, []);
 
   const handleAnalyze = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -33,6 +49,7 @@ export default function AnalyzePage() {
         gl: 'kr',
         num: numArticles,
         analysis_type: analysisType,
+        excluded_sources: Array.from(excludedSources),
       });
 
       setAnalysis(result);
@@ -63,7 +80,25 @@ export default function AnalyzePage() {
       <header className={styles.header}>
         <div className={styles.headerContent}>
           <Link href="/" className={styles.backLink}>← 검색으로 돌아가기</Link>
-          <h1>🤖 AI 뉴스 분석</h1>
+          <div className={styles.titleWithTooltip}>
+            <h1>🤖 AI 뉴스 분석</h1>
+            <div className={styles.tooltipWrapper}>
+              <span className={styles.helpIcon}>?</span>
+              <div className={styles.tooltip}>
+                <h4>AI 뉴스 분석이란?</h4>
+                <p><strong>데이터 소스:</strong> Google News, Naver, RSS 피드 (32개 언론사)</p>
+                <p><strong>분석 엔진:</strong> Cerebras LLM (초고속 AI 모델)</p>
+                <p><strong>분석 방법:</strong></p>
+                <ul>
+                  <li>최신 뉴스 기사 수집 및 중복 제거</li>
+                  <li>AI가 기사 내용을 읽고 패턴 파악</li>
+                  <li>감성, 트렌드, 핵심 정보 추출</li>
+                  <li>한국어로 종합 분석 결과 생성</li>
+                </ul>
+                <p><strong>소요 시간:</strong> 약 30초 ~ 2분</p>
+              </div>
+            </div>
+          </div>
           <p>Cerebras LLM으로 뉴스를 심층 분석합니다</p>
         </div>
       </header>

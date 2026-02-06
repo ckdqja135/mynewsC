@@ -10,6 +10,52 @@ type ViewMode = 'list' | 'grid';
 type SortOrder = 'desc' | 'asc';
 type Theme = 'light' | 'dark';
 
+// 언론사 목록
+const NEWS_SOURCES = [
+  // 한국 언론사
+  { id: 'google_news', name: 'Google News', category: '검색엔진' },
+  { id: 'naver', name: 'Naver 뉴스', category: '검색엔진' },
+  { id: '연합뉴스', name: '연합뉴스', category: '한국' },
+  { id: 'KBS', name: 'KBS', category: '한국' },
+  { id: 'MBC', name: 'MBC', category: '한국' },
+  { id: 'SBS', name: 'SBS', category: '한국' },
+  { id: 'JTBC', name: 'JTBC', category: '한국' },
+  // 미국 언론사
+  { id: 'CNN', name: 'CNN', category: '미국' },
+  { id: 'CNN World', name: 'CNN World', category: '미국' },
+  { id: 'CNN US', name: 'CNN US', category: '미국' },
+  { id: 'CNN Tech', name: 'CNN Tech', category: '미국' },
+  { id: 'ABC News', name: 'ABC News', category: '미국' },
+  { id: 'CBS News', name: 'CBS News', category: '미국' },
+  { id: 'NPR', name: 'NPR', category: '미국' },
+  { id: 'USA Today', name: 'USA Today', category: '미국' },
+  { id: 'Politico', name: 'Politico', category: '미국' },
+  // 영국 언론사
+  { id: 'BBC World', name: 'BBC World', category: '영국' },
+  { id: 'BBC Business', name: 'BBC Business', category: '영국' },
+  { id: 'BBC Tech', name: 'BBC Tech', category: '영국' },
+  { id: 'BBC Science', name: 'BBC Science', category: '영국' },
+  { id: 'The Guardian', name: 'The Guardian', category: '영국' },
+  { id: 'The Guardian Tech', name: 'The Guardian Tech', category: '영국' },
+  // 통신사/경제
+  { id: 'Reuters', name: 'Reuters', category: '통신사' },
+  { id: 'Reuters World', name: 'Reuters World', category: '통신사' },
+  { id: 'Reuters Business', name: 'Reuters Business', category: '통신사' },
+  { id: 'Reuters Tech', name: 'Reuters Tech', category: '통신사' },
+  { id: 'AP News', name: 'AP News', category: '통신사' },
+  { id: 'Bloomberg', name: 'Bloomberg', category: '경제' },
+  { id: 'Forbes', name: 'Forbes', category: '경제' },
+  { id: 'WSJ', name: 'Wall Street Journal', category: '경제' },
+  { id: 'WSJ Tech', name: 'WSJ Tech', category: '경제' },
+  // 기타
+  { id: 'NYTimes World', name: 'NY Times World', category: '기타' },
+  { id: 'NYTimes US', name: 'NY Times US', category: '기타' },
+  { id: 'NYTimes Tech', name: 'NY Times Tech', category: '기타' },
+  { id: 'NYTimes Business', name: 'NY Times Business', category: '기타' },
+  { id: 'Washington Post', name: 'Washington Post', category: '기타' },
+  { id: 'Time', name: 'Time', category: '기타' },
+];
+
 export default function Home() {
   const [query, setQuery] = useState('');
   const [articles, setArticles] = useState<NewsArticle[] | NewsArticleWithScore[]>([]);
@@ -34,6 +80,21 @@ export default function Home() {
   const [lastSearchQuery, setLastSearchQuery] = useState<string>('');
   const [lastSearchMode, setLastSearchMode] = useState<SearchMode | null>(null);
 
+  // 각 검색 모드별 결과 저장
+  const [keywordSearchCache, setKeywordSearchCache] = useState<{
+    query: string;
+    articles: NewsArticle[];
+    total: number;
+    searchTime: number;
+  } | null>(null);
+  const [semanticSearchCache, setSemanticSearchCache] = useState<{
+    query: string;
+    articles: NewsArticleWithScore[];
+    total: number;
+    searchTime: number;
+    analysisData: NewsAnalysisResponse | null;
+  } | null>(null);
+
   // 검색 히스토리
   const [searchHistory, setSearchHistory] = useState<string[]>([]);
   const [showHistory, setShowHistory] = useState<boolean>(false);
@@ -49,10 +110,12 @@ export default function Home() {
 
   // 설정 모달
   const [showSettings, setShowSettings] = useState<boolean>(false);
+  const [settingsTab, setSettingsTab] = useState<'auto' | 'filter'>('auto');
   const [defaultQuery, setDefaultQuery] = useState<string>('');
   const [defaultSearchMode, setDefaultSearchMode] = useState<SearchMode>('keyword');
   const [defaultMinSimilarity, setDefaultMinSimilarity] = useState<number>(0.3);
   const [autoSearchEnabled, setAutoSearchEnabled] = useState<boolean>(false);
+  const [excludedSources, setExcludedSources] = useState<Set<string>>(new Set());
 
   // AI 분석 상태
   const [analysisData, setAnalysisData] = useState<NewsAnalysisResponse | null>(null);
@@ -137,7 +200,22 @@ export default function Home() {
         console.error('Failed to load auto search settings:', e);
       }
     }
+
+    // 제외할 언론사 목록 로드
+    const savedExcludedSources = localStorage.getItem('excludedSources');
+    if (savedExcludedSources) {
+      try {
+        const parsed = JSON.parse(savedExcludedSources);
+        if (Array.isArray(parsed)) {
+          setExcludedSources(new Set(parsed));
+        }
+      } catch (e) {
+        console.error('Failed to load excluded sources:', e);
+      }
+    }
   }, []);
+
+  // 백엔드에서 필터링하므로 프론트엔드 필터링은 불필요
 
   const toggleBookmark = (articleId: string) => {
     setBookmarkedArticles(prev => {
@@ -192,6 +270,10 @@ export default function Home() {
       minSimilarity: defaultMinSimilarity,
     };
     localStorage.setItem('autoSearchSettings', JSON.stringify(settings));
+
+    // 제외할 언론사 저장
+    localStorage.setItem('excludedSources', JSON.stringify(Array.from(excludedSources)));
+
     setShowSettings(false);
   };
 
@@ -205,18 +287,67 @@ export default function Home() {
         q: searchQuery,
         hl: 'ko',
         gl: 'kr',
-        num: 50,  // Analyze up to 50 articles
+        num: 100,  // Analyze up to 100 articles
         analysis_type: 'comprehensive',
         days_back: 30,  // Analyze articles from the last 30 days
+        excluded_sources: Array.from(excludedSources),
       });
 
       setAnalysisData(response);
       setShowAnalysisPanel(true);
+
+      // 시맨틱 검색 캐시에 분석 결과 업데이트
+      setSemanticSearchCache(prev => {
+        if (prev && prev.query === searchQuery) {
+          return {
+            ...prev,
+            analysisData: response,
+          };
+        }
+        return prev;
+      });
     } catch (err) {
       setAnalysisError(err instanceof Error ? err.message : '뉴스 분석에 실패했습니다');
       setAnalysisData(null);
     } finally {
       setAnalysisLoading(false);
+    }
+  };
+
+  const handleSearchModeChange = (mode: SearchMode) => {
+    setSearchMode(mode);
+
+    // 해당 모드의 캐시된 결과 복원
+    if (mode === 'keyword' && keywordSearchCache) {
+      // 일반 검색 결과 복원
+      setQuery(keywordSearchCache.query); // 검색어도 복원
+      setArticles(keywordSearchCache.articles);
+      setTotal(keywordSearchCache.total);
+      setLastSearchQuery(keywordSearchCache.query);
+      setLastSearchMode('keyword');
+      setSearchTime(keywordSearchCache.searchTime);
+      setAnalysisData(null);
+      setAnalysisError('');
+    } else if (mode === 'semantic' && semanticSearchCache) {
+      // AI 검색 결과 복원
+      setQuery(semanticSearchCache.query); // 검색어도 복원
+      setArticles(semanticSearchCache.articles);
+      setTotal(semanticSearchCache.total);
+      setLastSearchQuery(semanticSearchCache.query);
+      setLastSearchMode('semantic');
+      setSearchTime(semanticSearchCache.searchTime);
+      setAnalysisData(semanticSearchCache.analysisData);
+      setAnalysisError('');
+    } else {
+      // 캐시된 결과가 없으면 초기화
+      setQuery(''); // 검색어도 초기화
+      setArticles([]);
+      setTotal(0);
+      setLastSearchQuery('');
+      setLastSearchMode(null);
+      setSearchTime(0);
+      setAnalysisData(null);
+      setAnalysisError('');
     }
   };
 
@@ -244,6 +375,9 @@ export default function Home() {
     const startTime = performance.now();
 
     try {
+      let responseArticles: NewsArticle[] | NewsArticleWithScore[];
+      let responseTotal: number;
+
       if (mode === 'semantic') {
         // 시맨틱 검색
         const response = await NewsApiService.semanticSearchNews({
@@ -252,8 +386,11 @@ export default function Home() {
           gl: 'kr',
           num: 500,
           min_similarity: minSimilarity,
+          excluded_sources: Array.from(excludedSources),
         });
 
+        responseArticles = response.articles;
+        responseTotal = response.total;
         setArticles(response.articles);
         setTotal(response.total);
 
@@ -268,15 +405,37 @@ export default function Home() {
           hl: 'ko',
           gl: 'kr',
           num: 500,
+          excluded_sources: Array.from(excludedSources),
         });
 
+        responseArticles = response.articles;
+        responseTotal = response.total;
         setArticles(response.articles);
         setTotal(response.total);
       }
 
       const endTime = performance.now();
-      setSearchTime((endTime - startTime) / 1000); // Convert to seconds
-      setLastSearchMode(mode); // 검색 완료 후 검색 모드 저장
+      const elapsedTime = (endTime - startTime) / 1000;
+      setSearchTime(elapsedTime);
+      setLastSearchMode(mode);
+
+      // 검색 결과를 캐시에 저장
+      if (mode === 'keyword') {
+        setKeywordSearchCache({
+          query: searchQuery,
+          articles: responseArticles as NewsArticle[],
+          total: responseTotal,
+          searchTime: elapsedTime,
+        });
+      } else {
+        setSemanticSearchCache({
+          query: searchQuery,
+          articles: responseArticles as NewsArticleWithScore[],
+          total: responseTotal,
+          searchTime: elapsedTime,
+          analysisData: null, // 분석은 나중에 업데이트
+        });
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : '뉴스를 불러오는데 실패했습니다');
       setArticles([]);
@@ -497,7 +656,7 @@ export default function Home() {
             <button
               type="button"
               className={`${styles.compactModeButton} ${searchMode === 'keyword' ? styles.active : ''}`}
-              onClick={() => setSearchMode('keyword')}
+              onClick={() => handleSearchModeChange('keyword')}
               title="키워드가 포함된 뉴스를 검색합니다"
             >
               <span className={styles.modeIcon}>🔍</span>
@@ -506,7 +665,7 @@ export default function Home() {
             <button
               type="button"
               className={`${styles.compactModeButton} ${searchMode === 'semantic' ? styles.active : ''}`}
-              onClick={() => setSearchMode('semantic')}
+              onClick={() => handleSearchModeChange('semantic')}
               title="의미가 유사한 뉴스를 AI로 검색합니다"
             >
               <span className={styles.modeIcon}>🤖</span>
@@ -961,7 +1120,23 @@ export default function Home() {
             <div className={styles.analysisColumn}>
               <div className={styles.analysisPanel}>
                 <div className={styles.analysisPanelHeader}>
-                  <h3>AI 뉴스 분석</h3>
+                  <div className={styles.headerWithHelp}>
+                    <h3>AI 뉴스 분석</h3>
+                    <div className={styles.helpTooltip}>
+                      <span className={styles.helpIcon}>?</span>
+                      <div className={styles.tooltipContent}>
+                        <p><strong>자동 분석:</strong> 시맨틱 검색 시 상위 100개 기사를 AI가 자동 분석합니다.</p>
+                        <p><strong>분석 내용:</strong></p>
+                        <ul>
+                          <li>📋 핵심 요약</li>
+                          <li>🎯 주요 포인트</li>
+                          <li>💭 감성 분석 (긍정/부정)</li>
+                          <li>📈 트렌드 및 키워드</li>
+                        </ul>
+                        <p><strong>소요 시간:</strong> 약 30초 ~ 1분</p>
+                      </div>
+                    </div>
+                  </div>
                   <button
                     className={styles.toggleAnalysisButton}
                     onClick={() => setShowAnalysisPanel(!showAnalysisPanel)}
@@ -1117,9 +1292,9 @@ export default function Home() {
                       </>
                     )}
 
-                    {!analysisData && !analysisLoading && !analysisError && (
+                    {!analysisData && !analysisLoading && !analysisError && lastSearchQuery && articles.length > 0 && (
                       <div className={styles.analysisPlaceholder}>
-                        <p>검색 결과를 분석 중입니다...</p>
+                        <p>검색 결과가 준비되었습니다.</p>
                       </div>
                     )}
                   </div>
@@ -1146,7 +1321,24 @@ export default function Home() {
             </div>
 
             <div className={styles.modalBody}>
-              {/* 자동 검색 섹션 */}
+              {/* 탭 네비게이션 */}
+              <div className={styles.settingsTabs}>
+                <button
+                  className={`${styles.settingsTab} ${settingsTab === 'auto' ? styles.activeTab : ''}`}
+                  onClick={() => setSettingsTab('auto')}
+                >
+                  🔄 자동 검색
+                </button>
+                <button
+                  className={`${styles.settingsTab} ${settingsTab === 'filter' ? styles.activeTab : ''}`}
+                  onClick={() => setSettingsTab('filter')}
+                >
+                  📰 언론사 필터
+                </button>
+              </div>
+
+              {/* 자동 검색 탭 */}
+              {settingsTab === 'auto' && (
               <div className={styles.settingSection}>
                 <h3 className={styles.sectionTitle}>자동 검색</h3>
 
@@ -1233,6 +1425,178 @@ export default function Home() {
                   </div>
                 )}
               </div>
+              )}
+
+              {/* 언론사 필터 탭 */}
+              {settingsTab === 'filter' && (
+              <div className={styles.settingSection}>
+                <h3 className={styles.sectionTitle}>언론사 필터</h3>
+                <p style={{ fontSize: '14px', color: 'var(--text-secondary)', marginBottom: '16px' }}>
+                  제외할 언론사를 선택하세요. 선택된 언론사의 기사는 검색 결과에서 제외됩니다.
+                </p>
+
+                {/* 카테고리별로 언론사 표시 */}
+                {['검색엔진', '한국', '미국', '영국', '통신사', '경제', '기타'].map(category => {
+                  const sourcesInCategory = NEWS_SOURCES.filter(s => s.category === category);
+                  if (sourcesInCategory.length === 0) return null;
+
+                  // 해당 카테고리의 모든 소스가 제외되었는지 확인
+                  const allExcluded = sourcesInCategory.every(s => excludedSources.has(s.id));
+                  const someExcluded = sourcesInCategory.some(s => excludedSources.has(s.id));
+
+                  const toggleCategoryExclusion = () => {
+                    const newExcluded = new Set(excludedSources);
+                    if (allExcluded) {
+                      // 전체 포함 (모두 제거)
+                      sourcesInCategory.forEach(s => newExcluded.delete(s.id));
+                    } else {
+                      // 전체 제외 (모두 추가)
+                      sourcesInCategory.forEach(s => newExcluded.add(s.id));
+                    }
+                    setExcludedSources(newExcluded);
+                  };
+
+                  return (
+                    <div key={category} style={{ marginBottom: '20px' }}>
+                      <div style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '12px',
+                        marginBottom: '10px'
+                      }}>
+                        <h4 style={{
+                          fontSize: '13px',
+                          fontWeight: '700',
+                          color: 'var(--accent-color)',
+                          margin: 0,
+                          textTransform: 'uppercase',
+                          letterSpacing: '0.05em'
+                        }}>
+                          {category} ({sourcesInCategory.length}개)
+                        </h4>
+                        <button
+                          onClick={toggleCategoryExclusion}
+                          style={{
+                            padding: '6px 12px',
+                            fontSize: '11px',
+                            fontWeight: '600',
+                            background: allExcluded
+                              ? 'var(--accent-color)'
+                              : someExcluded
+                              ? 'var(--bg-secondary)'
+                              : 'var(--error-bg)',
+                            color: allExcluded
+                              ? 'white'
+                              : someExcluded
+                              ? 'var(--text-primary)'
+                              : 'var(--error-text)',
+                            border: '2px solid',
+                            borderColor: allExcluded
+                              ? 'var(--accent-color)'
+                              : someExcluded
+                              ? 'var(--border-color)'
+                              : 'var(--error-border)',
+                            borderRadius: '6px',
+                            cursor: 'pointer',
+                            transition: 'all 0.2s ease',
+                            textTransform: 'uppercase',
+                            letterSpacing: '0.05em'
+                          }}
+                        >
+                          {allExcluded ? '✓ 전체 포함' : '✕ 전체 제외'}
+                        </button>
+                      </div>
+                      <div style={{
+                        display: 'grid',
+                        gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))',
+                        gap: '8px'
+                      }}>
+                        {sourcesInCategory.map(source => (
+                          <label
+                            key={source.id}
+                            style={{
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: '8px',
+                              padding: '8px 12px',
+                              background: excludedSources.has(source.id)
+                                ? 'var(--error-bg)'
+                                : 'var(--bg-hover)',
+                              borderRadius: '8px',
+                              border: '2px solid',
+                              borderColor: excludedSources.has(source.id)
+                                ? 'var(--error-border)'
+                                : 'var(--border-color)',
+                              cursor: 'pointer',
+                              transition: 'all 0.2s ease',
+                              fontSize: '13px'
+                            }}
+                          >
+                            <input
+                              type="checkbox"
+                              checked={excludedSources.has(source.id)}
+                              onChange={(e) => {
+                                const newExcluded = new Set(excludedSources);
+                                if (e.target.checked) {
+                                  newExcluded.add(source.id);
+                                } else {
+                                  newExcluded.delete(source.id);
+                                }
+                                setExcludedSources(newExcluded);
+                              }}
+                              style={{ cursor: 'pointer' }}
+                            />
+                            <span style={{
+                              color: excludedSources.has(source.id)
+                                ? 'var(--error-text)'
+                                : 'var(--text-primary)',
+                              fontWeight: excludedSources.has(source.id) ? '600' : '500'
+                            }}>
+                              {source.name}
+                            </span>
+                          </label>
+                        ))}
+                      </div>
+                    </div>
+                  );
+                })}
+
+                <div style={{
+                  marginTop: '16px',
+                  padding: '12px',
+                  background: 'var(--bg-hover)',
+                  borderRadius: '8px',
+                  border: '1px solid var(--border-color)'
+                }}>
+                  <div style={{
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    fontSize: '14px'
+                  }}>
+                    <span style={{ color: 'var(--text-secondary)' }}>
+                      제외된 언론사: <strong style={{ color: 'var(--error-text)' }}>{excludedSources.size}개</strong>
+                    </span>
+                    {excludedSources.size > 0 && (
+                      <button
+                        onClick={() => setExcludedSources(new Set())}
+                        style={{
+                          padding: '6px 12px',
+                          fontSize: '12px',
+                          background: 'var(--bg-secondary)',
+                          border: '1px solid var(--border-color)',
+                          borderRadius: '6px',
+                          cursor: 'pointer',
+                          color: 'var(--text-primary)'
+                        }}
+                      >
+                        모두 해제
+                      </button>
+                    )}
+                  </div>
+                </div>
+              </div>
+              )}
 
               {/* 나중에 다른 섹션 추가 가능 */}
             </div>

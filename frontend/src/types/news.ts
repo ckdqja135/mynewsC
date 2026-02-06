@@ -17,6 +17,7 @@ export interface NewsSearchRequest {
   hl?: string;
   gl?: string;
   num?: number;
+  excluded_sources?: string[];
 }
 
 export interface SemanticSearchRequest extends NewsSearchRequest {
@@ -66,6 +67,7 @@ export interface NewsAnalysisRequest {
   num?: number;
   analysis_type?: AnalysisType;
   days_back?: number;
+  excluded_sources?: string[];
 }
 
 export interface NewsAnalysisResponse {

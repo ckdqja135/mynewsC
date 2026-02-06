@@ -15,6 +15,141 @@
   margin: 0 auto;
 }
 
+.titleWithTooltip {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  justify-content: center;
+}
+
+.tooltipWrapper {
+  position: relative;
+  display: inline-block;
+}
+
+.helpIcon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.2);
+  color: white;
+  font-size: 14px;
+  font-weight: 700;
+  cursor: help;
+  transition: all 0.2s ease;
+  border: 2px solid rgba(255, 255, 255, 0.4);
+}
+
+.helpIcon:hover {
+  background: rgba(255, 255, 255, 0.3);
+  transform: scale(1.1);
+}
+
+.tooltip {
+  position: absolute;
+  top: calc(100% + 10px);
+  left: 50%;
+  transform: translateX(-50%);
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  padding: 20px;
+  border-radius: 12px;
+  box-shadow: 0 8px 24px var(--shadow-lg);
+  border: 2px solid var(--border-color);
+  min-width: 320px;
+  max-width: 400px;
+  z-index: 1000;
+  opacity: 0;
+  visibility: hidden;
+  transition: all 0.3s ease;
+  pointer-events: none;
+}
+
+.tooltipWrapper:hover .tooltip {
+  opacity: 1;
+  visibility: visible;
+  transform: translateX(-50%) translateY(0);
+}
+
+.tooltip::before {
+  content: '';
+  position: absolute;
+  bottom: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  border: 8px solid transparent;
+  border-bottom-color: var(--border-color);
+}
+
+.tooltip::after {
+  content: '';
+  position: absolute;
+  bottom: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  border: 6px solid transparent;
+  border-bottom-color: var(--bg-secondary);
+  margin-bottom: -2px;
+}
+
+.tooltip h4 {
+  margin: 0 0 12px 0;
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--accent-color);
+  border-bottom: 2px solid var(--accent-color);
+  padding-bottom: 8px;
+}
+
+.tooltip p {
+  margin: 8px 0;
+  font-size: 14px;
+  line-height: 1.6;
+  color: var(--text-primary);
+}
+
+.tooltip strong {
+  color: var(--accent-color);
+  font-weight: 700;
+}
+
+.tooltip ul {
+  margin: 8px 0;
+  padding-left: 20px;
+  list-style: disc;
+}
+
+.tooltip li {
+  margin: 4px 0;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text-secondary);
+}
+
+@media (max-width: 768px) {
+  .tooltip {
+    min-width: 280px;
+    max-width: 90vw;
+    left: auto;
+    right: 0;
+    transform: none;
+  }
+
+  .tooltipWrapper:hover .tooltip {
+    transform: translateY(0);
+  }
+
+  .tooltip::before,
+  .tooltip::after {
+    left: auto;
+    right: 20px;
+    transform: none;
+  }
+}
+
 .backLink {
   display: inline-block;
   color: white;
