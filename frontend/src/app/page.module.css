@@ -123,162 +123,155 @@
   width: 100%;
 }
 
-/* 검색 모드 선택 */
-.searchModeSelector {
-  margin-bottom: 25px;
-  padding: 24px;
-  background: var(--bg-secondary);
-  border-radius: 16px;
-  box-shadow: 0 4px 12px var(--shadow-md);
-  border: 1px solid var(--border-color);
-  transition: all 0.3s ease;
-}
-
-.searchModeSelector:hover {
-  box-shadow: 0 8px 24px var(--shadow-lg);
-  transform: translateY(-2px);
-}
-
-.modeButtons {
+/* 컴팩트 검색 모드 선택 */
+.compactModeSelector {
   display: flex;
-  gap: 5px;
+  gap: 4px;
   background: var(--bg-hover);
-  border-radius: 8px;
+  border-radius: 10px;
   padding: 4px;
-  margin-bottom: 12px;
+  border: 2px solid var(--border-color);
 }
 
-.modeButton {
-  flex: 1;
-  padding: 12px 24px;
-  font-size: 15px;
-  font-weight: 600;
-  background: transparent;
-  border: none;
-  border-radius: 6px;
-  cursor: pointer;
-  transition: all 0.2s;
-  color: var(--text-secondary);
-}
-
-.modeButton:hover {
-  background: var(--bg-secondary);
-  color: var(--text-primary);
-}
-
-.modeButton.active {
-  background: var(--accent-gradient);
-  color: white;
-  box-shadow: 0 4px 12px var(--glow);
-  transform: scale(1.02);
-}
-
-.modeDescription {
-  text-align: center;
-  color: var(--text-secondary);
-  font-size: 14px;
-  line-height: 1.5;
-}
-
-/* 시맨틱 검색 유사도 설정 */
-.similarityControl {
-  margin-bottom: 25px;
-  padding: 20px;
-  background: var(--bg-secondary);
-  border-radius: 8px;
-  box-shadow: 0 2px 4px var(--shadow);
-}
-
-.similarityControl label {
-  display: block;
-  margin-bottom: 15px;
-  color: var(--text-primary);
-  font-size: 15px;
-  font-weight: 600;
-}
-
-/* 유사도 프리셋 버튼 */
-.similarityPresets {
+.compactModeButton {
   display: flex;
-  gap: 8px;
-  margin-bottom: 15px;
-  flex-wrap: wrap;
-}
-
-.presetButton {
-  flex: 1;
-  min-width: 100px;
+  align-items: center;
+  gap: 6px;
   padding: 10px 16px;
   font-size: 14px;
   font-weight: 600;
-  background: var(--bg-hover);
-  color: var(--text-secondary);
-  border: 2px solid var(--border-color);
+  background: transparent;
+  border: none;
   border-radius: 8px;
   cursor: pointer;
-  transition: all 0.3s ease;
+  transition: all 0.2s ease;
+  color: var(--text-secondary);
+  white-space: nowrap;
 }
 
-.presetButton:hover {
+.compactModeButton:hover {
   background: var(--bg-secondary);
   color: var(--text-primary);
-  border-color: var(--accent-color);
-  transform: translateY(-2px);
-  box-shadow: 0 4px 12px var(--shadow-md);
 }
 
-.presetButton.active {
+.compactModeButton.active {
   background: var(--accent-gradient);
   color: white;
-  border-color: var(--accent-color);
-  box-shadow: 0 4px 12px var(--glow);
+  box-shadow: 0 2px 8px var(--glow);
 }
 
-.similaritySlider {
-  width: 100%;
-  height: 8px;
-  border-radius: 4px;
+.modeIcon {
+  font-size: 16px;
+  line-height: 1;
+}
+
+.modeLabel {
+  font-size: 14px;
+  font-weight: 700;
+}
+
+@media (max-width: 640px) {
+  .modeLabel {
+    display: none;
+  }
+
+  .compactModeButton {
+    padding: 10px 12px;
+  }
+}
+
+/* 시맨틱 검색 유사도 설정 (컴팩트 버전) */
+.similarityCompact {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 11.5px 20px;
   background: var(--bg-hover);
+  border-radius: 12px;
+  border: 2px solid var(--border-color);
+  min-width: 220px;
+  transition: all 0.2s ease;
+}
+
+.similarityCompact:hover {
+  border-color: var(--accent-color);
+  background: var(--bg-secondary);
+}
+
+.similarityLabel {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+
+.similaritySliderCompact {
+  flex: 1;
+  height: 6px;
+  border-radius: 3px;
+  background: linear-gradient(to right,
+    var(--bg-secondary) 0%,
+    var(--accent-color) 100%);
   outline: none;
   -webkit-appearance: none;
-  margin-bottom: 8px;
+  cursor: pointer;
+  min-width: 100px;
 }
 
-.similaritySlider::-webkit-slider-thumb {
+.similaritySliderCompact::-webkit-slider-thumb {
   -webkit-appearance: none;
   appearance: none;
-  width: 20px;
-  height: 20px;
+  width: 18px;
+  height: 18px;
   border-radius: 50%;
   background: var(--accent-color);
   cursor: pointer;
-  transition: transform 0.2s;
+  transition: all 0.2s ease;
+  box-shadow: 0 2px 6px var(--glow);
+  border: 2px solid var(--bg-secondary);
 }
 
-.similaritySlider::-webkit-slider-thumb:hover {
+.similaritySliderCompact::-webkit-slider-thumb:hover {
   transform: scale(1.2);
+  box-shadow: 0 4px 10px var(--glow);
 }
 
-.similaritySlider::-moz-range-thumb {
-  width: 20px;
-  height: 20px;
+.similaritySliderCompact::-webkit-slider-thumb:active {
+  transform: scale(1.05);
+}
+
+.similaritySliderCompact::-moz-range-thumb {
+  width: 18px;
+  height: 18px;
   border-radius: 50%;
   background: var(--accent-color);
   cursor: pointer;
-  border: none;
-  transition: transform 0.2s;
+  border: 2px solid var(--bg-secondary);
+  transition: all 0.2s ease;
+  box-shadow: 0 2px 6px var(--glow);
 }
 
-.similaritySlider::-moz-range-thumb:hover {
+.similaritySliderCompact::-moz-range-thumb:hover {
   transform: scale(1.2);
+  box-shadow: 0 4px 10px var(--glow);
 }
 
-.similarityHint {
+.similaritySliderCompact::-moz-range-thumb:active {
+  transform: scale(1.05);
+}
+
+.similarityValue {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--accent-color);
+  background: var(--bg-secondary);
+  padding: 4px 10px;
+  border-radius: 6px;
+  min-width: 42px;
   text-align: center;
-  color: var(--text-secondary);
-  font-size: 13px;
-  margin-top: 5px;
+  white-space: nowrap;
 }
+
 
 /* 유사도 점수 배지 */
 .similarityBadge {
@@ -331,9 +324,22 @@
 
 .searchForm {
   display: flex;
-  gap: 10px;
+  align-items: flex-start;
+  gap: 12px;
   margin-bottom: 30px;
   position: relative;
+  background: var(--bg-secondary);
+  padding: 16px;
+  border-radius: 16px;
+  box-shadow: 0 4px 12px var(--shadow-md);
+  border: 2px solid var(--border-color);
+  transition: all 0.3s ease;
+  flex-wrap: wrap;
+}
+
+.searchForm:hover {
+  box-shadow: 0 8px 24px var(--shadow-lg);
+  transform: translateY(-2px);
 }
 
 .searchInputWrapper {
@@ -1245,6 +1251,39 @@
 
   .searchForm {
     flex-direction: column;
+    align-items: stretch;
+  }
+
+  .compactModeSelector {
+    width: 100%;
+    justify-content: center;
+  }
+
+  .searchInputWrapper {
+    width: 100%;
+  }
+
+  .searchButton {
+    width: 100%;
+  }
+
+  .similarityCompact {
+    width: 100%;
+    min-width: 0;
+  }
+
+  .similarityLabel {
+    font-size: 12px;
+  }
+
+  .similarityValue {
+    font-size: 13px;
+    min-width: 38px;
+    padding: 4px 8px;
+  }
+
+  .similaritySliderCompact {
+    min-width: 80px;
   }
 
   .modeButtons {
@@ -1645,7 +1684,7 @@
   justify-content: space-between;
   align-items: center;
   padding: 16px 20px;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  background: var(--accent-gradient);
   color: white;
 }
 
@@ -1725,7 +1764,7 @@
   content: '';
   width: 4px;
   height: 16px;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  background: var(--accent-gradient);
   border-radius: 2px;
 }
 
@@ -1737,7 +1776,7 @@
   background: var(--bg-hover);
   padding: 14px;
   border-radius: 8px;
-  border-left: 3px solid #667eea;
+  border-left: 3px solid var(--accent-color);
 }
 
 /* 분석 주요 포인트 */
@@ -1763,7 +1802,7 @@
   content: '•';
   position: absolute;
   left: 12px;
-  color: #667eea;
+  color: var(--accent-color);
   font-weight: 900;
   font-size: 18px;
 }
@@ -1865,7 +1904,7 @@
 .sentimentAspects li::before {
   content: '▸';
   margin-right: 8px;
-  color: #667eea;
+  color: var(--accent-color);
 }
 
 /* 트렌드 분석 */
@@ -1897,19 +1936,29 @@
 }
 
 .trendTag {
-  background: linear-gradient(135deg, #667eea20 0%, #764ba220 100%);
-  color: #667eea;
-  padding: 6px 12px;
-  border-radius: 16px;
-  font-size: 12px;
+  background: var(--bg-secondary);
+  color: var(--accent-color);
+  padding: 10px 16px;
+  border-radius: 10px;
+  font-size: 13px;
   font-weight: 600;
-  border: 1px solid #667eea40;
+  border: 2px solid var(--accent-color);
+  box-shadow: 0 2px 8px var(--shadow-md);
+  transition: all 0.2s ease;
+  display: inline-block;
+}
+
+.trendTag:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px var(--glow);
+  background: var(--accent-color);
+  color: white;
 }
 
 [data-theme='dark'] .trendTag {
-  background: #1a1f3a;
-  color: #8b9dc3;
-  border-color: #8b9dc350;
+  background: var(--bg-secondary);
+  color: var(--accent-color);
+  border-color: var(--accent-color);
 }
 
 /* 분석 메타 정보 */

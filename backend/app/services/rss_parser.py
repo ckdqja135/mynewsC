@@ -10,11 +10,74 @@ from app.utils.date_parser import parse_published_date
 class RSSParser:
     # 주요 한국 뉴스 RSS 피드
     RSS_FEEDS = {
+        # 한국 언론사
         "연합뉴스": "https://www.yonhapnewstv.co.kr/category/news/headline/feed/",
         "KBS": "https://news.kbs.co.kr/rss/headline.xml",
         "MBC": "https://imnews.imbc.com/rss/news/news_00.xml",
         "SBS": "https://news.sbs.co.kr/news/SectionRssFeed.do?sectionId=01",
         "JTBC": "https://fs.jtbc.co.kr/RSS/newsflash.xml",
+
+        # CNN
+        "CNN": "http://rss.cnn.com/rss/edition.rss",
+        "CNN World": "http://rss.cnn.com/rss/edition_world.rss",
+        "CNN US": "http://rss.cnn.com/rss/edition_us.rss",
+        "CNN Tech": "http://rss.cnn.com/rss/edition_technology.rss",
+
+        # BBC
+        "BBC World": "http://feeds.bbci.co.uk/news/world/rss.xml",
+        "BBC Business": "http://feeds.bbci.co.uk/news/business/rss.xml",
+        "BBC Tech": "http://feeds.bbci.co.uk/news/technology/rss.xml",
+        "BBC Science": "http://feeds.bbci.co.uk/news/science_and_environment/rss.xml",
+
+        # Reuters
+        "Reuters": "https://www.reutersagency.com/feed/?taxonomy=best-topics&post_type=best",
+        "Reuters World": "https://www.reuters.com/rssFeed/worldNews",
+        "Reuters Business": "https://www.reuters.com/rssFeed/businessNews",
+        "Reuters Tech": "https://www.reuters.com/rssFeed/technologyNews",
+
+        # AP News
+        "AP News": "https://rsshub.app/apnews/topics/apf-topnews",
+
+        # New York Times
+        "NYTimes World": "https://rss.nytimes.com/services/xml/rss/nyt/World.xml",
+        "NYTimes US": "https://rss.nytimes.com/services/xml/rss/nyt/US.xml",
+        "NYTimes Tech": "https://rss.nytimes.com/services/xml/rss/nyt/Technology.xml",
+        "NYTimes Business": "https://rss.nytimes.com/services/xml/rss/nyt/Business.xml",
+
+        # Washington Post
+        "Washington Post": "https://feeds.washingtonpost.com/rss/world",
+
+        # Wall Street Journal
+        "WSJ": "https://feeds.a.dj.com/rss/RSSWorldNews.xml",
+        "WSJ Tech": "https://feeds.a.dj.com/rss/RSSWSJD.xml",
+
+        # USA Today
+        "USA Today": "http://rssfeeds.usatoday.com/usatoday-NewsTopStories",
+
+        # NPR
+        "NPR": "https://feeds.npr.org/1001/rss.xml",
+
+        # The Guardian
+        "The Guardian": "https://www.theguardian.com/world/rss",
+        "The Guardian Tech": "https://www.theguardian.com/technology/rss",
+
+        # Bloomberg
+        "Bloomberg": "https://www.bloomberg.com/feeds/sitemap_news.xml",
+
+        # Forbes
+        "Forbes": "https://www.forbes.com/real-time/feed2/",
+
+        # Time
+        "Time": "https://time.com/feed/",
+
+        # Politico
+        "Politico": "https://www.politico.com/rss/politics08.xml",
+
+        # ABC News
+        "ABC News": "https://abcnews.go.com/abcnews/topstories",
+
+        # CBS News
+        "CBS News": "https://www.cbsnews.com/latest/rss/main",
     }
 
     async def search_news(self, query: str, max_per_feed: int = 50) -> list[NewsArticle]:
@@ -24,7 +87,7 @@ class RSSParser:
         """
         all_articles = []
 
-        async with httpx.AsyncClient(timeout=30.0) as client:
+        async with httpx.AsyncClient(timeout=15.0) as client:
             for source_name, feed_url in self.RSS_FEEDS.items():
                 try:
                     articles = await self._fetch_feed(

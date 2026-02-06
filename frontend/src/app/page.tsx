@@ -490,68 +490,37 @@ export default function Home() {
       </header>
 
       <main className={styles.main}>
-        {/* 검색 모드 선택 */}
-        <div className={styles.searchModeSelector}>
-          <div className={styles.modeButtons}>
-            <button
-              type="button"
-              className={`${styles.modeButton} ${searchMode === 'keyword' ? styles.active : ''}`}
-              onClick={() => setSearchMode('keyword')}
-            >
-              일반 검색
-            </button>
-            <button
-              type="button"
-              className={`${styles.modeButton} ${searchMode === 'semantic' ? styles.active : ''}`}
-              onClick={() => setSearchMode('semantic')}
-            >
-              시맨틱 검색
-            </button>
-          </div>
-          <div className={styles.modeDescription}>
-            {searchMode === 'keyword'
-              ? '키워드가 포함된 뉴스를 검색합니다 (날짜순 정렬)'
-              : '의미가 유사한 뉴스를 AI로 검색합니다 (관련도순 정렬)'}
-          </div>
-        </div>
-
-        {/* 시맨틱 검색 시 유사도 설정 */}
-        {searchMode === 'semantic' && (
-          <div className={styles.similarityControl}>
-            <label htmlFor="similarity-slider">
-              최소 유사도: <strong>{(minSimilarity * 100).toFixed(0)}%</strong>
-            </label>
-
-            <input
-              id="similarity-slider"
-              type="range"
-              min="0.0"
-              max="0.9"
-              step="0.05"
-              value={minSimilarity}
-              onChange={(e) => setMinSimilarity(parseFloat(e.target.value))}
-              className={styles.similaritySlider}
-            />
-            <div className={styles.similarityHint}>
-              {minSimilarity >= 0.6
-                ? '엄격: 매우 관련성 높은 뉴스만 표시'
-                : minSimilarity >= 0.4
-                ? '보통: 관련있는 뉴스 표시 (권장)'
-                : minSimilarity >= 0.2
-                ? '느슨: 약간 관련있어도 포함'
-                : '전체: 모든 뉴스 표시 (관련도순 정렬)'}
-            </div>
-          </div>
-        )}
-
+        {/* 통합 검색 바 */}
         <form onSubmit={handleSearch} className={styles.searchForm}>
+          {/* 검색 모드 선택 */}
+          <div className={styles.compactModeSelector}>
+            <button
+              type="button"
+              className={`${styles.compactModeButton} ${searchMode === 'keyword' ? styles.active : ''}`}
+              onClick={() => setSearchMode('keyword')}
+              title="키워드가 포함된 뉴스를 검색합니다"
+            >
+              <span className={styles.modeIcon}>🔍</span>
+              <span className={styles.modeLabel}>일반</span>
+            </button>
+            <button
+              type="button"
+              className={`${styles.compactModeButton} ${searchMode === 'semantic' ? styles.active : ''}`}
+              onClick={() => setSearchMode('semantic')}
+              title="의미가 유사한 뉴스를 AI로 검색합니다"
+            >
+              <span className={styles.modeIcon}>🤖</span>
+              <span className={styles.modeLabel}>AI</span>
+            </button>
+          </div>
+
           <div className={styles.searchInputWrapper}>
             <input
               type="text"
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               onFocus={() => setShowHistory(true)}
-              placeholder="검색어를 입력하세요..."
+              placeholder={searchMode === 'keyword' ? '키워드로 검색...' : 'AI 시맨틱 검색...'}
               className={styles.searchInput}
               disabled={loading}
             />
@@ -593,6 +562,39 @@ export default function Home() {
           >
             {loading ? '검색 중...' : '검색'}
           </button>
+
+          {/* 시맨틱 검색 시 유사도 조절 */}
+          {searchMode === 'semantic' && (
+            <div
+              className={styles.similarityCompact}
+              title={
+                minSimilarity >= 0.6
+                  ? '엄격: 매우 관련성 높은 뉴스만'
+                  : minSimilarity >= 0.4
+                  ? '보통: 관련있는 뉴스 (권장)'
+                  : minSimilarity >= 0.2
+                  ? '느슨: 약간 관련있어도 포함'
+                  : '전체: 모든 뉴스 (관련도순)'
+              }
+            >
+              <label htmlFor="similarity-slider" className={styles.similarityLabel}>
+                유사도
+              </label>
+              <input
+                id="similarity-slider"
+                type="range"
+                min="0.0"
+                max="0.9"
+                step="0.05"
+                value={minSimilarity}
+                onChange={(e) => setMinSimilarity(parseFloat(e.target.value))}
+                className={styles.similaritySliderCompact}
+              />
+              <span className={styles.similarityValue}>
+                {(minSimilarity * 100).toFixed(0)}%
+              </span>
+            </div>
+          )}
         </form>
 
         {/* 검색 중 로딩 표시 */}

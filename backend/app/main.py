@@ -14,6 +14,7 @@ from app.models import (
 )
 from app.services.news_crawler import NewsCrawler
 from app.middleware.rate_limit import RateLimitMiddleware
+from app.utils.cache import keyword_search_cache, semantic_search_cache, analysis_cache
 
 load_dotenv()
 
@@ -82,6 +83,25 @@ async def health_check():
     return {"status": "healthy"}
 
 
+@app.get("/api/cache/stats")
+async def cache_stats():
+    """Get cache statistics"""
+    return {
+        "keyword_search": keyword_search_cache.get_stats(),
+        "semantic_search": semantic_search_cache.get_stats(),
+        "analysis": analysis_cache.get_stats()
+    }
+
+
+@app.post("/api/cache/clear")
+async def clear_cache():
+    """Clear all caches"""
+    keyword_search_cache.clear()
+    semantic_search_cache.clear()
+    analysis_cache.clear()
+    return {"status": "success", "message": "All caches cleared"}
+
+
 @app.post("/api/news/search", response_model=NewsSearchResponse)
 async def search_news(request: NewsSearchRequest):
     """
@@ -94,7 +114,21 @@ async def search_news(request: NewsSearchRequest):
     - **hl**: Language code (default: ko)
     - **gl**: Country code (default: kr)
     - **num**: Number of results (max 500)
+
+    Results are cached for 5 minutes for faster repeated searches.
     """
+    # Check cache first
+    cached_result = keyword_search_cache.get(
+        q=request.q,
+        hl=request.hl,
+        gl=request.gl,
+        num=request.num
+    )
+
+    if cached_result is not None:
+        print(f"[CACHE] Returning cached results for keyword search: {request.q}")
+        return cached_result
+
     try:
         import asyncio
 
@@ -116,10 +150,10 @@ async def search_news(request: NewsSearchRequest):
                 display=min(request.num, 1000)
             ))
 
-        # 3. RSS Feeds
+        # 3. RSS Feeds - 일반 검색은 빠르게 (20개/피드)
         tasks.append(rss_parser.search_news(
             query=request.q,
-            max_per_feed=50
+            max_per_feed=20
         ))
 
         # Wait for all sources
@@ -157,11 +191,22 @@ async def search_news(request: NewsSearchRequest):
 
         unique_articles.sort(key=get_sort_key, reverse=True)
 
-        return NewsSearchResponse(
+        response = NewsSearchResponse(
             articles=unique_articles,
             total=len(unique_articles),
             query=request.q
         )
+
+        # Cache the result
+        keyword_search_cache.set(
+            response,
+            q=request.q,
+            hl=request.hl,
+            gl=request.gl,
+            num=request.num
+        )
+
+        return response
     except Exception as e:
         raise HTTPException(
             status_code=500,
@@ -195,12 +240,27 @@ async def semantic_search_news(request: SemanticSearchRequest):
     3. Performs ultra-fast vector search using FAISS
     4. Filters by minimum similarity threshold
     5. Returns results sorted by similarity score (highest first)
+
+    Results are cached for 5 minutes for faster repeated searches.
     """
     if not embedding_service:
         raise HTTPException(
             status_code=503,
             detail="Semantic search is not available. Embedding service failed to initialize."
         )
+
+    # Check cache first
+    cached_result = semantic_search_cache.get(
+        q=request.q,
+        hl=request.hl,
+        gl=request.gl,
+        num=request.num,
+        min_similarity=request.min_similarity
+    )
+
+    if cached_result is not None:
+        print(f"[CACHE] Returning cached results for semantic search: {request.q}")
+        return cached_result
 
     try:
         import asyncio
@@ -223,10 +283,10 @@ async def semantic_search_news(request: SemanticSearchRequest):
                 display=min(request.num, 1000)
             ))
 
-        # 3. RSS Feeds
+        # 3. RSS Feeds - 시맨틱 검색은 더 많은 데이터 (30개/피드)
         tasks.append(rss_parser.search_news(
             query=request.q,
-            max_per_feed=50
+            max_per_feed=30
         ))
 
         # Wait for all sources
@@ -275,11 +335,23 @@ async def semantic_search_news(request: SemanticSearchRequest):
             for article, score in ranked_results
         ]
 
-        return SemanticSearchResponse(
+        response = SemanticSearchResponse(
             articles=articles_with_scores,
             total=len(articles_with_scores),
             query=request.q
         )
+
+        # Cache the result
+        semantic_search_cache.set(
+            response,
+            q=request.q,
+            hl=request.hl,
+            gl=request.gl,
+            num=request.num,
+            min_similarity=request.min_similarity
+        )
+
+        return response
 
     except HTTPException:
         raise
@@ -354,12 +426,28 @@ async def analyze_news(request: NewsAnalysisRequest):
     - **key_points**: List of key insights
     - **sentiment**: Sentiment analysis (if requested)
     - **trends**: Trend analysis (if requested)
+
+    Results are cached for 10 minutes (analysis is expensive).
     """
     if not llm_service:
         raise HTTPException(
             status_code=503,
             detail="News analysis is not available. LLM service failed to initialize."
         )
+
+    # Check cache first
+    cached_result = analysis_cache.get(
+        q=request.q,
+        hl=request.hl,
+        gl=request.gl,
+        num=request.num,
+        analysis_type=request.analysis_type,
+        days_back=request.days_back
+    )
+
+    if cached_result is not None:
+        print(f"[CACHE] Returning cached analysis for: {request.q}")
+        return cached_result
 
     try:
         import asyncio
@@ -382,7 +470,7 @@ async def analyze_news(request: NewsAnalysisRequest):
                 display=min(request.num, 100)
             ))
 
-        # 3. RSS Feeds
+        # 3. RSS Feeds - AI 분석은 충분한 데이터 (30개/피드)
         tasks.append(rss_parser.search_news(
             query=request.q,
             max_per_feed=30
@@ -475,6 +563,18 @@ async def analyze_news(request: NewsAnalysisRequest):
             )
 
         print(f"[DEBUG] Analysis completed: {request.analysis_type}")
+
+        # Cache the result
+        analysis_cache.set(
+            analysis_result,
+            q=request.q,
+            hl=request.hl,
+            gl=request.gl,
+            num=request.num,
+            analysis_type=request.analysis_type,
+            days_back=request.days_back
+        )
+
         return analysis_result
 
     except HTTPException:

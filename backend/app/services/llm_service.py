@@ -61,6 +61,8 @@ Content: {snippet}
 
 {context}
 
+IMPORTANT: Respond in Korean (한국어로 응답해주세요). All text fields should be in Korean.
+
 Please provide a detailed analysis in the following JSON format:
 {{
     "summary": "A concise 2-3 sentence summary of what's happening with {query}",
@@ -83,7 +85,7 @@ Respond ONLY with valid JSON. No additional text."""
         response = self.client.chat.completions.create(
             model=self.model,
             messages=[
-                {"role": "system", "content": "You are a professional news analyst. Always respond in valid JSON format only."},
+                {"role": "system", "content": "You are a professional news analyst. Always respond in Korean (한국어) and in valid JSON format only."},
                 {"role": "user", "content": prompt}
             ],
             temperature=0.3,
@@ -132,6 +134,8 @@ Respond ONLY with valid JSON. No additional text."""
 
 {context}
 
+IMPORTANT: Respond in Korean (한국어로 응답해주세요). All text fields should be in Korean.
+
 Provide a sentiment analysis in the following JSON format:
 {{
     "summary": "Brief summary of overall sentiment",
@@ -150,7 +154,7 @@ Respond ONLY with valid JSON."""
         response = self.client.chat.completions.create(
             model=self.model,
             messages=[
-                {"role": "system", "content": "You are a professional sentiment analyst. Always respond in valid JSON format only."},
+                {"role": "system", "content": "You are a professional sentiment analyst. Always respond in Korean (한국어) and in valid JSON format only."},
                 {"role": "user", "content": prompt}
             ],
             temperature=0.2,
@@ -196,6 +200,8 @@ Respond ONLY with valid JSON."""
 
 {context}
 
+IMPORTANT: Respond in Korean (한국어로 응답해주세요). All text fields should be in Korean.
+
 Provide a trend analysis in the following JSON format:
 {{
     "summary": "Brief summary of main trends",
@@ -212,7 +218,7 @@ Respond ONLY with valid JSON."""
         response = self.client.chat.completions.create(
             model=self.model,
             messages=[
-                {"role": "system", "content": "You are a professional trend analyst. Always respond in valid JSON format only."},
+                {"role": "system", "content": "You are a professional trend analyst. Always respond in Korean (한국어) and in valid JSON format only."},
                 {"role": "user", "content": prompt}
             ],
             temperature=0.3,
@@ -258,6 +264,8 @@ Respond ONLY with valid JSON."""
 
 {context}
 
+IMPORTANT: Respond in Korean (한국어로 응답해주세요). All text fields should be in Korean.
+
 Provide key points in the following JSON format:
 {{
     "summary": "One sentence summary of the most important information",
@@ -269,7 +277,7 @@ Focus on factual, actionable information. Respond ONLY with valid JSON."""
         response = self.client.chat.completions.create(
             model=self.model,
             messages=[
-                {"role": "system", "content": "You are a professional news summarizer. Always respond in valid JSON format only."},
+                {"role": "system", "content": "You are a professional news summarizer. Always respond in Korean (한국어) and in valid JSON format only."},
                 {"role": "user", "content": prompt}
             ],
             temperature=0.2,
