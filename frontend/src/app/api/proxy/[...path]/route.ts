@@ -2,6 +2,9 @@ import { NextRequest, NextResponse } from 'next/server';
 
 const BACKEND_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
+// Vercel serverless function timeout (max 60s for Pro, 10s for Free)
+export const maxDuration = 60;
+
 export async function GET(
   request: NextRequest,
   { params }: { params: { path: string[] } }
@@ -45,13 +48,20 @@ export async function POST(
     const body = await request.json();
     console.log('[Proxy Body]', body);
 
+    // Increased timeout for LLM analysis (3 minutes)
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 180000);
+
     const response = await fetch(url, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify(body),
+      signal: controller.signal,
     });
+
+    clearTimeout(timeoutId);
 
     console.log('[Proxy Response Status]', response.status);
 

@@ -82,7 +82,7 @@ export class NewsApiService {
         '/news/analyze',
         params,
         {
-          timeout: 120000, // 2분 (LLM 분석은 시간이 더 걸릴 수 있음)
+          timeout: 180000, // 3분 (LLM 분석은 시간이 더 걸릴 수 있음)
         }
       );
       return response.data;
