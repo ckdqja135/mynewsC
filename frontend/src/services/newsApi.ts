@@ -24,7 +24,7 @@ export class NewsApiService {
   // 키워드 검색 (기존)
   static async searchNews(params: NewsSearchRequest): Promise<NewsSearchResponse> {
     try {
-      const response = await apiClient.post<NewsSearchResponse>('/api/news/search', params);
+      const response = await apiClient.post<NewsSearchResponse>('/news/search', params);
       return response.data;
     } catch (error) {
       if (axios.isAxiosError(error)) {
@@ -51,7 +51,7 @@ export class NewsApiService {
   // 시맨틱 검색 (새로 추가)
   static async semanticSearchNews(params: SemanticSearchRequest): Promise<SemanticSearchResponse> {
     try {
-      const response = await apiClient.post<SemanticSearchResponse>('/api/news/semantic-search', params);
+      const response = await apiClient.post<SemanticSearchResponse>('/news/semantic-search', params);
       return response.data;
     } catch (error) {
       if (axios.isAxiosError(error)) {
@@ -79,7 +79,7 @@ export class NewsApiService {
   static async analyzeNews(params: NewsAnalysisRequest): Promise<NewsAnalysisResponse> {
     try {
       const response = await apiClient.post<NewsAnalysisResponse>(
-        '/api/news/analyze',
+        '/news/analyze',
         params,
         {
           timeout: 120000, // 2분 (LLM 분석은 시간이 더 걸릴 수 있음)

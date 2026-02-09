@@ -8,7 +8,7 @@ export async function GET(
 ) {
   const path = params.path.join('/');
   const searchParams = request.nextUrl.searchParams.toString();
-  const url = `${BACKEND_URL}/${path}${searchParams ? `?${searchParams}` : ''}`;
+  const url = `${BACKEND_URL}/api/${path}${searchParams ? `?${searchParams}` : ''}`;
 
   try {
     const response = await fetch(url, {
@@ -33,7 +33,7 @@ export async function POST(
   { params }: { params: { path: string[] } }
 ) {
   const path = params.path.join('/');
-  const url = `${BACKEND_URL}/${path}`;
+  const url = `${BACKEND_URL}/api/${path}`;
   const body = await request.json();
 
   try {
