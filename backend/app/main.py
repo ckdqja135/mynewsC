@@ -2,6 +2,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
 import os
+from pathlib import Path
 
 from app.models import (
     NewsSearchRequest,
@@ -16,7 +17,9 @@ from app.services.news_crawler import NewsCrawler
 from app.middleware.rate_limit import RateLimitMiddleware
 from app.utils.cache import keyword_search_cache, semantic_search_cache, analysis_cache
 
-load_dotenv()
+# Load .env file from the backend directory (parent of app directory)
+env_path = Path(__file__).parent.parent / '.env'
+load_dotenv(dotenv_path=env_path)
 
 app = FastAPI(
     title="News Crawler API",
