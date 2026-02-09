@@ -9,7 +9,8 @@ import type {
   ApiError
 } from '@/types/news';
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+// Use Next.js API proxy to avoid CORS issues (HTTPS -> HTTP)
+const API_BASE_URL = '/api/proxy';
 
 const apiClient = axios.create({
   baseURL: API_BASE_URL,
