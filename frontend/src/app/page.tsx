@@ -493,7 +493,7 @@ export default function Home() {
 
       if (startDate) {
         result = result.filter(article => {
-          if (!article.publishedAt) return false;
+          if (!article.publishedAt || !startDate) return false;
           const articleDate = new Date(article.publishedAt);
 
           if (dateFilter === 'custom' && customEndDate) {
