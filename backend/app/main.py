@@ -19,7 +19,12 @@ from app.utils.cache import keyword_search_cache, semantic_search_cache, analysi
 
 # Load .env file from the backend directory (parent of app directory)
 env_path = Path(__file__).parent.parent / '.env'
-load_dotenv(dotenv_path=env_path)
+print(f"[DEBUG] Loading .env from: {env_path}")
+print(f"[DEBUG] .env exists: {env_path.exists()}")
+print(f"[DEBUG] .env is_file: {env_path.is_file()}")
+load_result = load_dotenv(dotenv_path=env_path, verbose=True, override=True)
+print(f"[DEBUG] load_dotenv returned: {load_result}")
+print(f"[DEBUG] SERPAPI_KEY after load: {os.getenv('SERPAPI_KEY')}")
 
 app = FastAPI(
     title="News Crawler API",
