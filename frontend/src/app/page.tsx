@@ -117,6 +117,9 @@ export default function Home() {
   const [autoSearchEnabled, setAutoSearchEnabled] = useState<boolean>(false);
   const [excludedSources, setExcludedSources] = useState<Set<string>>(new Set());
 
+  // 언론사 필터 펼침/접힘
+  const [showSourceFilter, setShowSourceFilter] = useState<boolean>(true);
+
   // AI 분석 상태
   const [analysisData, setAnalysisData] = useState<NewsAnalysisResponse | null>(null);
   const [analysisLoading, setAnalysisLoading] = useState<boolean>(false);
@@ -932,22 +935,36 @@ export default function Home() {
             </div>
 
             {sources.length > 1 && (
-              <div className={styles.sourceFilter}>
-                <button
-                  className={`${styles.sourceButton} ${!selectedSource ? styles.active : ''}`}
-                  onClick={() => setSelectedSource(null)}
-                >
-                  전체 ({total})
-                </button>
-                {sources.map(({ source, count }) => (
+              <div className={styles.sourceFilterContainer}>
+                <div className={styles.sourceFilterHeader}>
+                  <span className={styles.sourceFilterTitle}>📰 언론사 필터</span>
                   <button
-                    key={source}
-                    className={`${styles.sourceButton} ${selectedSource === source ? styles.active : ''}`}
-                    onClick={() => setSelectedSource(source)}
+                    className={styles.sourceFilterToggle}
+                    onClick={() => setShowSourceFilter(!showSourceFilter)}
+                    aria-label={showSourceFilter ? '필터 접기' : '필터 펼치기'}
                   >
-                    {source} ({count})
+                    {showSourceFilter ? '▲ 접기' : '▼ 펼치기'}
                   </button>
-                ))}
+                </div>
+                {showSourceFilter && (
+                  <div className={styles.sourceFilter}>
+                    <button
+                      className={`${styles.sourceButton} ${!selectedSource ? styles.active : ''}`}
+                      onClick={() => setSelectedSource(null)}
+                    >
+                      전체 ({total})
+                    </button>
+                    {sources.map(({ source, count }) => (
+                      <button
+                        key={source}
+                        className={`${styles.sourceButton} ${selectedSource === source ? styles.active : ''}`}
+                        onClick={() => setSelectedSource(source)}
+                      >
+                        {source} ({count})
+                      </button>
+                    ))}
+                  </div>
+                )}
               </div>
             )}
           </>
