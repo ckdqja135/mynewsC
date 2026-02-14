@@ -1,0 +1,15 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(curl:*)",
+      "WebFetch(domain:news.google.com)",
+      "WebSearch",
+      "WebFetch(domain:search.naver.com)",
+      "WebFetch(domain:gist.github.com)",
+      "WebFetch(domain:community.n8n.io)",
+      "WebFetch(domain:scrape.do)",
+      "WebFetch(domain:support.google.com)",
+      "WebFetch(domain:serpapi.com)"
+    ]
+  }
+}
