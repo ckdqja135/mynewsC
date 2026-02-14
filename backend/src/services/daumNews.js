@@ -3,15 +3,15 @@ const cheerio = require('cheerio');
 const { generateNewsId } = require('../utils/idGenerator');
 const { parsePublishedDate } = require('../utils/dateParser');
 
-class NaverNewsService {
+class DaumNewsService {
   constructor() {
-    this.searchUrl = 'https://search.naver.com/search.naver';
-    this.delay = 200; // ms between batch requests
-    this.batchSize = 5; // concurrent pages per batch
+    this.searchUrl = 'https://search.daum.net/search';
+    this.delay = 200;
+    this.batchSize = 5;
   }
 
   /**
-   * Search news by scraping search.naver.com HTML.
+   * Search news by scraping search.daum.net HTML.
    * Uses parallel batch requests for speed.
    * @param {string} query - Search query
    * @param {number} maxResults - Maximum number of articles to return
@@ -22,14 +22,13 @@ class NaverNewsService {
     const pagesNeeded = Math.ceil(maxResults / resultsPerPage);
     const allArticles = [];
 
-    // Fetch pages in parallel batches
     for (let batchStart = 0; batchStart < pagesNeeded; batchStart += this.batchSize) {
       const batchEnd = Math.min(batchStart + this.batchSize, pagesNeeded);
       const batchPromises = [];
 
       for (let page = batchStart; page < batchEnd; page++) {
-        const start = page * resultsPerPage + 1;
-        batchPromises.push(this._fetchPage(query, start));
+        const pageNum = page + 1;
+        batchPromises.push(this._fetchPage(query, pageNum));
       }
 
       const results = await Promise.allSettled(batchPromises);
@@ -42,11 +41,9 @@ class NaverNewsService {
         }
       }
 
-      // Stop if no results in this batch
       if (!gotResults) break;
       if (allArticles.length >= maxResults) break;
 
-      // Small delay between batches to avoid blocking
       if (batchStart + this.batchSize < pagesNeeded) {
         await new Promise(resolve => setTimeout(resolve, this.delay));
       }
@@ -55,14 +52,14 @@ class NaverNewsService {
     return allArticles.slice(0, maxResults);
   }
 
-  async _fetchPage(query, start) {
+  async _fetchPage(query, page) {
     try {
       const response = await axios.get(this.searchUrl, {
         params: {
-          where: 'news',
-          query,
-          start,
-          sort: 1, // 최신순
+          w: 'news',
+          q: query,
+          p: page,
+          sort: 'recency', // 최신순
         },
         headers: {
           'User-Agent':
@@ -78,54 +75,48 @@ class NaverNewsService {
     }
   }
 
-  /**
-   * Parse a Naver news search result page.
-   */
   _parseSearchPage(html) {
     const $ = cheerio.load(html);
     const articles = [];
 
-    // Naver news search result items
-    $('div.news_area, div.news_wrap').each((_, el) => {
+    // Daum news search result items
+    $('ul.list_news > li, div.wrap_cont').each((_, el) => {
       try {
         const $el = $(el);
 
         // Title and URL
-        const $titleLink = $el.find('a.news_tit');
+        const $titleLink = $el.find('a.tit_main, a.link_txt, a.tit_g');
         const title = $titleLink.text().trim();
         const url = $titleLink.attr('href') || '';
 
         if (!title || !url) return;
 
-        // Snippet / description
-        const snippet = $el.find('div.news_dsc, a.api_txt_lines.dsc_txt_wrap').text().trim() || null;
+        // Snippet
+        const snippet = $el.find('p.desc, div.desc, span.txt_info').text().trim() || null;
 
         // Source name
-        const source = $el.find('a.info.press').text().trim()
-          || $el.find('span.info.press').text().trim()
-          || 'naver';
+        const source = $el.find('span.info_cp, a.info_cp, span.txt_cp').text().trim() || 'daum';
 
-        // Date info
-        const dateText = $el.find('span.info').filter((_, span) => {
+        // Date
+        const dateText = $el.find('span.txt_info, span.info_time').filter((_, span) => {
           const text = $(span).text();
-          return /전|\./.test(text) && !/press/.test($(span).attr('class') || '');
+          return /전|\.|\-|시간|일/.test(text);
         }).first().text().trim();
 
-        const publishedAt = dateText ? parsePublishedDate(dateText, 'naver') : null;
-
+        const publishedAt = dateText ? parsePublishedDate(dateText, 'daum') : null;
         const articleId = generateNewsId(url, title);
 
         articles.push({
           id: articleId,
           title,
           url,
-          source,
+          source: source || 'daum',
           publishedAt: publishedAt ? publishedAt.toISOString() : null,
           snippet,
           thumbnail: null,
         });
       } catch {
-        // Skip malformed items
+        // Skip
       }
     });
 
@@ -133,4 +124,4 @@ class NaverNewsService {
   }
 }
 
-module.exports = { NaverNewsService };
+module.exports = { DaumNewsService };

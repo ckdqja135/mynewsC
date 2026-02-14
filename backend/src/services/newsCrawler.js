@@ -15,48 +15,79 @@ class NewsCrawler {
 
   /**
    * Search news using Google News RSS feed.
+   * Fetches from multiple time-scoped queries to maximize results.
    * @param {string} query - Search query
    * @param {string} hl - Language code (e.g. 'ko')
    * @param {string} gl - Country code (e.g. 'kr')
    * @param {number} num - Maximum number of articles
    * @returns {Promise<Array>} - Array of article objects
    */
-  async searchNews(query, hl = 'ko', gl = 'kr', num = 100) {
+  async searchNews(query, hl = 'ko', gl = 'kr', num = 500) {
     const encodedQuery = encodeURIComponent(query);
-    const rssUrl = `https://news.google.com/rss/search?q=${encodedQuery}&hl=${hl}&gl=${gl.toUpperCase()}&ceid=${gl.toUpperCase()}:${hl}`;
+    const ceid = `${gl.toUpperCase()}:${hl}`;
 
-    try {
-      const feed = await this.parser.parseURL(rssUrl);
-      const items = feed.items || [];
+    // Fetch from multiple Google News RSS URLs to maximize results
+    const base = `hl=${hl}&gl=${gl.toUpperCase()}&ceid=${ceid}`;
+    const rssUrls = [
+      // Default (recent)
+      `https://news.google.com/rss/search?q=${encodedQuery}&${base}`,
+      // Time ranges
+      `https://news.google.com/rss/search?q=${encodedQuery}+when:1d&${base}`,
+      `https://news.google.com/rss/search?q=${encodedQuery}+when:3d&${base}`,
+      `https://news.google.com/rss/search?q=${encodedQuery}+when:7d&${base}`,
+      `https://news.google.com/rss/search?q=${encodedQuery}+when:30d&${base}`,
+      // If multi-word, also search with quotes for exact match
+      ...(query.includes(' ') ? [
+        `https://news.google.com/rss/search?q=%22${encodedQuery}%22&${base}`,
+      ] : []),
+      // Also try English locale for international coverage
+      ...(hl !== 'en' ? [
+        `https://news.google.com/rss/search?q=${encodedQuery}&hl=en&gl=US&ceid=US:en`,
+      ] : []),
+    ];
 
-      const articles = [];
-      for (const item of items) {
-        if (articles.length >= num) break;
-        const article = this._parseRssItem(item);
-        if (article) articles.push(article);
-      }
+    const allArticles = [];
 
-      // Deduplicate
-      const seenIds = new Set();
-      const unique = [];
-      for (const article of articles) {
-        if (!seenIds.has(article.id)) {
-          seenIds.add(article.id);
-          unique.push(article);
+    const feedPromises = rssUrls.map(async (rssUrl) => {
+      try {
+        const feed = await this.parser.parseURL(rssUrl);
+        const items = feed.items || [];
+        const articles = [];
+        for (const item of items) {
+          const article = this._parseRssItem(item);
+          if (article) articles.push(article);
         }
+        return articles;
+      } catch {
+        return [];
       }
+    });
 
-      // Sort newest first
-      unique.sort((a, b) => {
-        const dateA = a.publishedAt ? new Date(a.publishedAt).getTime() : 0;
-        const dateB = b.publishedAt ? new Date(b.publishedAt).getTime() : 0;
-        return dateB - dateA;
-      });
-
-      return unique;
-    } catch (err) {
-      throw new Error(`Google News RSS fetch failed: ${err.message}`);
+    const results = await Promise.allSettled(feedPromises);
+    for (const result of results) {
+      if (result.status === 'fulfilled' && Array.isArray(result.value)) {
+        allArticles.push(...result.value);
+      }
     }
+
+    // Deduplicate
+    const seenIds = new Set();
+    const unique = [];
+    for (const article of allArticles) {
+      if (!seenIds.has(article.id)) {
+        seenIds.add(article.id);
+        unique.push(article);
+      }
+    }
+
+    // Sort newest first
+    unique.sort((a, b) => {
+      const dateA = a.publishedAt ? new Date(a.publishedAt).getTime() : 0;
+      const dateB = b.publishedAt ? new Date(b.publishedAt).getTime() : 0;
+      return dateB - dateA;
+    });
+
+    return unique.slice(0, num);
   }
 
   _parseRssItem(item) {

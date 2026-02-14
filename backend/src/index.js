@@ -25,6 +25,9 @@ const crawler = new NewsCrawler();
 const { NaverNewsService } = require('./services/naverNews');
 const naverService = new NaverNewsService();
 
+const { DaumNewsService } = require('./services/daumNews');
+const daumService = new DaumNewsService();
+
 // RSS Parser (always available)
 const rssParser = new RSSParserService();
 
@@ -57,7 +60,7 @@ function validateSearchRequest(body) {
   }
   const hl = body.hl || 'ko';
   const gl = body.gl || 'kr';
-  const num = Math.min(Math.max(parseInt(body.num, 10) || 100, 1), 500);
+  const num = Math.min(Math.max(parseInt(body.num, 10) || 100, 1), 1000);
   const excluded_sources = body.excluded_sources || [];
   return { q, hl, gl, num, excluded_sources };
 }
@@ -65,24 +68,31 @@ function validateSearchRequest(body) {
 /**
  * Fetch news from all sources concurrently
  */
-async function fetchFromAllSources(q, hl, gl, num, excludedSources, rssMaxPerFeed = 20) {
+async function fetchFromAllSources(q, hl, gl, num, excludedSources, rssMaxPerFeed = 100) {
   const tasks = [];
 
-  // 1. Google News (RSS) - limit to 100
+  // 1. Google News (RSS) - multiple time-range queries
   if (!excludedSources.includes('google_news')) {
-    tasks.push(crawler.searchNews(q, hl, gl, Math.min(num, 100)));
+    tasks.push(crawler.searchNews(q, hl, gl, num));
   } else {
     console.log('[DEBUG] Skipping Google News (excluded)');
   }
 
-  // 2. Naver News (scraping) - up to 1000
+  // 2. Naver News (scraping) - parallel batch, up to 1000
   if (!excludedSources.includes('naver')) {
     tasks.push(naverService.searchNews(q, Math.min(num, 1000)));
   } else {
     console.log('[DEBUG] Skipping Naver News (excluded)');
   }
 
-  // 3. RSS Feeds
+  // 3. Daum News (scraping) - parallel batch, up to 1000
+  if (!excludedSources.includes('daum')) {
+    tasks.push(daumService.searchNews(q, Math.min(num, 1000)));
+  } else {
+    console.log('[DEBUG] Skipping Daum News (excluded)');
+  }
+
+  // 4. RSS Feeds (Korean: no filter, International: keyword filter)
   tasks.push(rssParser.searchNews(q, rssMaxPerFeed, excludedSources));
 
   const results = await Promise.allSettled(tasks);
@@ -180,7 +190,7 @@ app.post('/api/news/search', async (req, res) => {
   }
 
   try {
-    const allArticles = await fetchFromAllSources(q, hl, gl, num, excluded_sources, 20);
+    const allArticles = await fetchFromAllSources(q, hl, gl, num, excluded_sources, 100);
     console.log(`[DEBUG] Keyword search - Fetched ${allArticles.length} articles total`);
 
     const uniqueArticles = deduplicateAndFilter(allArticles, excluded_sources);
@@ -229,7 +239,7 @@ app.post('/api/news/semantic-search', async (req, res) => {
   }
 
   try {
-    const allArticles = await fetchFromAllSources(q, hl, gl, num, excluded_sources, 30);
+    const allArticles = await fetchFromAllSources(q, hl, gl, num, excluded_sources, 100);
     console.log(`[DEBUG] Fetched ${allArticles.length} articles total`);
 
     const uniqueArticles = deduplicateAndFilter(allArticles, excluded_sources);
@@ -295,7 +305,7 @@ app.post('/api/news/analyze', async (req, res) => {
   }
 
   try {
-    const allArticles = await fetchFromAllSources(q, hl, gl, num, excluded_sources, 30);
+    const allArticles = await fetchFromAllSources(q, hl, gl, num, excluded_sources, 100);
     console.log(`[DEBUG] Analysis - Fetched ${allArticles.length} articles total`);
 
     const uniqueArticles = deduplicateAndFilter(allArticles, excluded_sources);
