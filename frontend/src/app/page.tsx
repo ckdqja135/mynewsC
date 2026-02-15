@@ -125,12 +125,12 @@ export default function Home() {
 
   // 설정 모달
   const [showSettings, setShowSettings] = useState<boolean>(false);
-  const [settingsTab, setSettingsTab] = useState<'auto' | 'filter'>('auto');
   const [defaultQuery, setDefaultQuery] = useState<string>('');
   const [defaultSearchMode, setDefaultSearchMode] = useState<SearchMode>('keyword');
   const [defaultMinSimilarity, setDefaultMinSimilarity] = useState<number>(0.3);
   const [autoSearchEnabled, setAutoSearchEnabled] = useState<boolean>(false);
   const [excludedSources, setExcludedSources] = useState<Set<string>>(new Set());
+  const [maxArticles, setMaxArticles] = useState<number>(200); // 크롤링할 최대 기사 수
 
   // 언론사 필터 펼침/접힘
   const [showSourceFilter, setShowSourceFilter] = useState<boolean>(true);
@@ -200,6 +200,7 @@ export default function Home() {
         setDefaultQuery(parsed.query || '');
         setDefaultSearchMode(parsed.searchMode || 'keyword');
         setDefaultMinSimilarity(parsed.minSimilarity || 0.3);
+        setMaxArticles(parsed.maxArticles || 200);
 
         if (parsed.enabled && parsed.query) {
           // 자동 검색 실행
@@ -286,6 +287,7 @@ export default function Home() {
       query: defaultQuery,
       searchMode: defaultSearchMode,
       minSimilarity: defaultMinSimilarity,
+      maxArticles: maxArticles,
     };
     localStorage.setItem('autoSearchSettings', JSON.stringify(settings));
 
@@ -402,7 +404,7 @@ export default function Home() {
           q: searchQuery,
           hl: 'ko',
           gl: 'kr',
-          num: 1000,
+          num: maxArticles,
           min_similarity: minSimilarity,
           excluded_sources: Array.from(excludedSources),
         });
@@ -422,7 +424,7 @@ export default function Home() {
           q: searchQuery,
           hl: 'ko',
           gl: 'kr',
-          num: 1000,
+          num: maxArticles,
           excluded_sources: Array.from(excludedSources),
         });
 
@@ -1353,26 +1355,8 @@ export default function Home() {
             </div>
 
             <div className={styles.modalBody}>
-              {/* 탭 네비게이션 */}
-              <div className={styles.settingsTabs}>
-                <button
-                  className={`${styles.settingsTab} ${settingsTab === 'auto' ? styles.activeTab : ''}`}
-                  onClick={() => setSettingsTab('auto')}
-                >
-                  🔄 자동 검색
-                </button>
-                <button
-                  className={`${styles.settingsTab} ${settingsTab === 'filter' ? styles.activeTab : ''}`}
-                  onClick={() => setSettingsTab('filter')}
-                >
-                  📰 언론사 필터
-                </button>
-              </div>
-
-              {/* 자동 검색 탭 */}
-              {settingsTab === 'auto' && (
               <div className={styles.settingSection}>
-                <h3 className={styles.sectionTitle}>자동 검색</h3>
+                <h3 className={styles.sectionTitle}>자동 검색 설정</h3>
 
                 <div className={styles.settingItem}>
                   <label className={styles.toggleLabel}>
@@ -1456,181 +1440,29 @@ export default function Home() {
                     </div>
                   </div>
                 )}
-              </div>
-              )}
 
-              {/* 언론사 필터 탭 */}
-              {settingsTab === 'filter' && (
-              <div className={styles.settingSection}>
-                <h3 className={styles.sectionTitle}>언론사 필터</h3>
-                <p style={{ fontSize: '14px', color: 'var(--text-secondary)', marginBottom: '16px' }}>
-                  제외할 언론사를 선택하세요. 선택된 언론사의 기사는 검색 결과에서 제외됩니다.
-                </p>
-
-                {/* 카테고리별로 언론사 표시 */}
-                {['검색엔진', '한국', '미국', '영국', '통신사', '경제', '기타'].map(category => {
-                  const sourcesInCategory = NEWS_SOURCES.filter(s => s.category === category);
-                  if (sourcesInCategory.length === 0) return null;
-
-                  // 해당 카테고리의 모든 소스가 제외되었는지 확인
-                  const allExcluded = sourcesInCategory.every(s => excludedSources.has(s.id));
-                  const someExcluded = sourcesInCategory.some(s => excludedSources.has(s.id));
-
-                  const toggleCategoryExclusion = () => {
-                    const newExcluded = new Set(excludedSources);
-                    if (allExcluded) {
-                      // 전체 포함 (모두 제거)
-                      sourcesInCategory.forEach(s => newExcluded.delete(s.id));
-                    } else {
-                      // 전체 제외 (모두 추가)
-                      sourcesInCategory.forEach(s => newExcluded.add(s.id));
-                    }
-                    setExcludedSources(newExcluded);
-                  };
-
-                  return (
-                    <div key={category} style={{ marginBottom: '20px' }}>
-                      <div style={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: '12px',
-                        marginBottom: '10px'
-                      }}>
-                        <h4 style={{
-                          fontSize: '13px',
-                          fontWeight: '700',
-                          color: 'var(--accent-color)',
-                          margin: 0,
-                          textTransform: 'uppercase',
-                          letterSpacing: '0.05em'
-                        }}>
-                          {category} ({sourcesInCategory.length}개)
-                        </h4>
-                        <button
-                          onClick={toggleCategoryExclusion}
-                          style={{
-                            padding: '6px 12px',
-                            fontSize: '11px',
-                            fontWeight: '600',
-                            background: allExcluded
-                              ? 'var(--accent-color)'
-                              : someExcluded
-                              ? 'var(--bg-secondary)'
-                              : 'var(--error-bg)',
-                            color: allExcluded
-                              ? 'white'
-                              : someExcluded
-                              ? 'var(--text-primary)'
-                              : 'var(--error-text)',
-                            border: '2px solid',
-                            borderColor: allExcluded
-                              ? 'var(--accent-color)'
-                              : someExcluded
-                              ? 'var(--border-color)'
-                              : 'var(--error-border)',
-                            borderRadius: '6px',
-                            cursor: 'pointer',
-                            transition: 'all 0.2s ease',
-                            textTransform: 'uppercase',
-                            letterSpacing: '0.05em'
-                          }}
-                        >
-                          {allExcluded ? '✓ 전체 포함' : '✕ 전체 제외'}
-                        </button>
-                      </div>
-                      <div style={{
-                        display: 'grid',
-                        gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))',
-                        gap: '8px'
-                      }}>
-                        {sourcesInCategory.map(source => (
-                          <label
-                            key={source.id}
-                            style={{
-                              display: 'flex',
-                              alignItems: 'center',
-                              gap: '8px',
-                              padding: '8px 12px',
-                              background: excludedSources.has(source.id)
-                                ? 'var(--error-bg)'
-                                : 'var(--bg-hover)',
-                              borderRadius: '8px',
-                              border: '2px solid',
-                              borderColor: excludedSources.has(source.id)
-                                ? 'var(--error-border)'
-                                : 'var(--border-color)',
-                              cursor: 'pointer',
-                              transition: 'all 0.2s ease',
-                              fontSize: '13px'
-                            }}
-                          >
-                            <input
-                              type="checkbox"
-                              checked={excludedSources.has(source.id)}
-                              onChange={(e) => {
-                                const newExcluded = new Set(excludedSources);
-                                if (e.target.checked) {
-                                  newExcluded.add(source.id);
-                                } else {
-                                  newExcluded.delete(source.id);
-                                }
-                                setExcludedSources(newExcluded);
-                              }}
-                              style={{ cursor: 'pointer' }}
-                            />
-                            <span style={{
-                              color: excludedSources.has(source.id)
-                                ? 'var(--error-text)'
-                                : 'var(--text-primary)',
-                              fontWeight: excludedSources.has(source.id) ? '600' : '500'
-                            }}>
-                              {source.name}
-                            </span>
-                          </label>
-                        ))}
-                      </div>
-                    </div>
-                  );
-                })}
-
-                <div style={{
-                  marginTop: '16px',
-                  padding: '12px',
-                  background: 'var(--bg-hover)',
-                  borderRadius: '8px',
-                  border: '1px solid var(--border-color)'
-                }}>
-                  <div style={{
-                    display: 'flex',
-                    justifyContent: 'space-between',
-                    alignItems: 'center',
-                    fontSize: '14px'
-                  }}>
-                    <span style={{ color: 'var(--text-secondary)' }}>
-                      제외된 언론사: <strong style={{ color: 'var(--error-text)' }}>{excludedSources.size}개</strong>
-                    </span>
-                    {excludedSources.size > 0 && (
-                      <button
-                        onClick={() => setExcludedSources(new Set())}
-                        style={{
-                          padding: '6px 12px',
-                          fontSize: '12px',
-                          background: 'var(--bg-secondary)',
-                          border: '1px solid var(--border-color)',
-                          borderRadius: '6px',
-                          cursor: 'pointer',
-                          color: 'var(--text-primary)'
-                        }}
-                      >
-                        모두 해제
-                      </button>
-                    )}
+                <div className={styles.settingItem}>
+                  <label htmlFor="max-articles" className={styles.settingLabel}>
+                    최대 기사 수: <strong>{maxArticles}개</strong>
+                  </label>
+                  <select
+                    id="max-articles"
+                    value={maxArticles}
+                    onChange={(e) => setMaxArticles(Number(e.target.value))}
+                    className={styles.settingInput}
+                  >
+                    <option value={50}>50개 (빠름)</option>
+                    <option value={100}>100개 (보통)</option>
+                    <option value={200}>200개 (권장)</option>
+                    <option value={300}>300개</option>
+                    <option value={500}>500개</option>
+                    <option value={1000}>1000개 (느림)</option>
+                  </select>
+                  <div className={styles.similarityHint}>
+                    크롤링할 최대 기사 수입니다. 많을수록 검색 시간이 길어집니다.
                   </div>
                 </div>
               </div>
-              )}
-
-              {/* 나중에 다른 섹션 추가 가능 */}
             </div>
 
             <div className={styles.modalFooter}>

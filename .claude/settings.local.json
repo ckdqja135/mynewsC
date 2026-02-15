@@ -9,7 +9,9 @@
       "WebFetch(domain:community.n8n.io)",
       "WebFetch(domain:scrape.do)",
       "WebFetch(domain:support.google.com)",
-      "WebFetch(domain:serpapi.com)"
+      "WebFetch(domain:serpapi.com)",
+      "Bash(node -e:*)",
+      "Bash(node:*)"
     ]
   }
 }

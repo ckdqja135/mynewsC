@@ -79,39 +79,78 @@ class NaverNewsService {
   }
 
   /**
-   * Parse a Naver news search result page.
+   * Parse a Naver news search result page (updated for 2025 structure).
    */
   _parseSearchPage(html) {
     const $ = cheerio.load(html);
     const articles = [];
+    const seenUrls = new Set();
 
-    // Naver news search result items
-    $('div.news_area, div.news_wrap').each((_, el) => {
+    // Find article links first
+    const articleLinks = [];
+    $('a[href]').each((_, el) => {
+      const href = $(el).attr('href') || '';
+      // Match various article URL patterns
+      if ((href.includes('/article/') || href.includes('article.php') || href.includes('articleView.html')) &&
+          !href.includes('/press/') && !href.includes('naver.com') && !seenUrls.has(href)) {
+        const $link = $(el);
+        const linkText = $link.text().trim();
+
+        // Check if this link might be a title (long enough text)
+        if (linkText && linkText.length >= 15 && linkText.length < 200) {
+          seenUrls.add(href);
+          articleLinks.push({ url: href, title: linkText, $link });
+        }
+      }
+    });
+
+    // For each article link, try to find associated metadata
+    articleLinks.forEach(({ url, title, $link }) => {
       try {
-        const $el = $(el);
+        // Find nearest parent that might contain metadata
+        const $item = $link.closest('[class*="YWTMk"], [class*="item"], div[class*="vertical-layout"]').first();
 
-        // Title and URL
-        const $titleLink = $el.find('a.news_tit');
-        const title = $titleLink.text().trim();
-        const url = $titleLink.attr('href') || '';
+        // Find source - look for press link in same container
+        let source = 'Naver';
+        const $pressLink = $item.find('a[href*="/press/"]').first();
+        if ($pressLink.length > 0) {
+          source = $pressLink.text().trim() || 'Naver';
+        }
+        // Fallback: extract from URL
+        if (source === 'Naver' || !source) {
+          try {
+            const urlObj = new URL(url);
+            const hostname = urlObj.hostname.replace(/^www\.|^m\.|^n\.|^sports\.|^biz\./, '');
+            source = hostname.split('.')[0];
+            // Capitalize first letter
+            source = source.charAt(0).toUpperCase() + source.slice(1);
+          } catch (e) {
+            source = 'Naver';
+          }
+        }
 
-        if (!title || !url) return;
-
-        // Snippet / description
-        const snippet = $el.find('div.news_dsc, a.api_txt_lines.dsc_txt_wrap').text().trim() || null;
-
-        // Source name
-        const source = $el.find('a.info.press').text().trim()
-          || $el.find('span.info.press').text().trim()
-          || 'naver';
-
-        // Date info
-        const dateText = $el.find('span.info').filter((_, span) => {
-          const text = $(span).text();
-          return /전|\./.test(text) && !/press/.test($(span).attr('class') || '');
-        }).first().text().trim();
+        // Find date - look for text matching time patterns
+        let dateText = '';
+        $item.find('[class*="text"]').each((_, el) => {
+          const text = $(el).text().trim();
+          if (/^\d+분\s*전$|^\d+시간\s*전$|^\d+일\s*전$|^\d{4}\.\d{1,2}\.\d{1,2}$/.test(text)) {
+            dateText = text;
+            return false;
+          }
+        });
 
         const publishedAt = dateText ? parsePublishedDate(dateText, 'naver') : null;
+
+        // Find snippet
+        let snippet = '';
+        $item.find('[class*="dsc"], [class*="desc"]').each((_, el) => {
+          const text = $(el).text().trim();
+          if (text.length > 20 && text !== title) {
+            snippet = text;
+            return false;
+          }
+        });
+        if (snippet.length > 300) snippet = snippet.substring(0, 300);
 
         const articleId = generateNewsId(url, title);
 
@@ -121,11 +160,11 @@ class NaverNewsService {
           url,
           source,
           publishedAt: publishedAt ? publishedAt.toISOString() : null,
-          snippet,
+          snippet: snippet || null,
           thumbnail: null,
         });
-      } catch {
-        // Skip malformed items
+      } catch (err) {
+        // Skip errors
       }
     });
 

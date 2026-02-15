@@ -198,9 +198,12 @@ app.post('/api/news/search', async (req, res) => {
 
     sortByDate(uniqueArticles);
 
+    // Limit to requested number of articles
+    const limitedArticles = uniqueArticles.slice(0, num);
+
     const response = {
-      articles: uniqueArticles,
-      total: uniqueArticles.length,
+      articles: limitedArticles,
+      total: limitedArticles.length,
       query: q,
     };
 
@@ -252,7 +255,10 @@ app.post('/api/news/semantic-search', async (req, res) => {
 
     console.log(`[DEBUG] After semantic filtering (min_similarity=${minSimilarity}): ${rankedResults.length} articles`);
 
-    const articlesWithScores = rankedResults.map(({ article, score }) => ({
+    // Limit to requested number of articles
+    const limitedResults = rankedResults.slice(0, num);
+
+    const articlesWithScores = limitedResults.map(({ article, score }) => ({
       ...article,
       similarity_score: score,
     }));

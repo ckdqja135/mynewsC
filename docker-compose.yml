@@ -1,0 +1,39 @@
+version: '3.8'
+
+services:
+  mynews:
+    image: ubuntu:22.04
+    container_name: mynews-app
+    restart: unless-stopped
+    ports:
+      - "8001:8000"   # Backend API
+      - "3002:3000"   # Frontend
+    environment:
+      - SERPAPI_KEY=${SERPAPI_KEY:-}
+      - NAVER_CLIENT_ID=${NAVER_CLIENT_ID:-}
+      - NAVER_CLIENT_SECRET=${NAVER_CLIENT_SECRET:-}
+      - RATE_LIMIT_PER_MINUTE=${RATE_LIMIT_PER_MINUTE:-60}
+      - NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL:-http://localhost:8000}
+      - PYTHONUNBUFFERED=1
+      - NODE_ENV=development
+    volumes:
+      # 전체 프로젝트 볼륨
+      - mynews-project:/app
+      # FAISS 데이터 영구 저장
+      - faiss-data:/app/data
+    working_dir: /app
+    command: tail -f /dev/null
+    networks:
+      - mynews-network
+
+volumes:
+  # 프로젝트 볼륨 (backend + frontend)
+  mynews-project:
+    driver: local
+  # FAISS 데이터
+  faiss-data:
+    driver: local
+
+networks:
+  mynews-network:
+    driver: bridge
