@@ -6,6 +6,9 @@ import type {
   SemanticSearchResponse,
   NewsAnalysisRequest,
   NewsAnalysisResponse,
+  LarkConfig,
+  LarkSendRequest,
+  LarkSendResponse,
   ApiError
 } from '@/types/news';
 
@@ -108,8 +111,138 @@ export class NewsApiService {
     }
   }
 
+  // LLM 기반 감성 분류
+  static async classifySentiment(articles: any[], query: string, sentimentTypes?: string[]): Promise<any> {
+    try {
+      const response = await apiClient.post(
+        '/news/classify-sentiment',
+        {
+          articles,
+          query,
+          sentimentTypes // 감성 타입 필터 추가
+        },
+        { timeout: 180000 } // 3분 (개별 기사 분석은 시간이 걸릴 수 있음)
+      );
+      return response.data;
+    } catch (error) {
+      if (axios.isAxiosError(error)) {
+        const axiosError = error as AxiosError<ApiError>;
+
+        if (axiosError.response) {
+          const errorData = axiosError.response.data;
+          const errorMessage =
+            errorData?.message ||
+            errorData?.detail ||
+            errorData?.error ||
+            'Failed to classify sentiment';
+
+          throw new Error(errorMessage);
+        } else if (axiosError.request) {
+          throw new Error('No response from server. Please check your connection.');
+        }
+      }
+
+      throw new Error('An unexpected error occurred');
+    }
+  }
+
   static async healthCheck(): Promise<{ status: string }> {
     const response = await apiClient.get('/health');
     return response.data;
+  }
+
+  // Lark 수동 전송
+  static async sendLarkManual(params: LarkSendRequest): Promise<LarkSendResponse> {
+    try {
+      const response = await apiClient.post<LarkSendResponse>(
+        '/lark/send-manual',
+        params,
+        { timeout: 60000 } // 1분
+      );
+      return response.data;
+    } catch (error) {
+      if (axios.isAxiosError(error)) {
+        const axiosError = error as AxiosError<ApiError>;
+
+        if (axiosError.response) {
+          const errorData = axiosError.response.data;
+          const errorMessage =
+            errorData?.message ||
+            errorData?.detail ||
+            errorData?.error ||
+            'Failed to send Lark message';
+
+          throw new Error(errorMessage);
+        } else if (axiosError.request) {
+          throw new Error('No response from server. Please check your connection.');
+        }
+      }
+
+      throw new Error('An unexpected error occurred');
+    }
+  }
+
+  // Lark 스케줄 저장
+  static async saveLarkSchedule(config: LarkConfig): Promise<{ success: boolean; jobId: string }> {
+    try {
+      const response = await apiClient.post<{ success: boolean; jobId: string }>(
+        '/lark/schedule-config',
+        config
+      );
+      return response.data;
+    } catch (error) {
+      if (axios.isAxiosError(error)) {
+        const axiosError = error as AxiosError<ApiError>;
+
+        if (axiosError.response) {
+          const errorData = axiosError.response.data;
+          const errorMessage =
+            errorData?.message ||
+            errorData?.detail ||
+            errorData?.error ||
+            'Failed to save Lark schedule';
+
+          throw new Error(errorMessage);
+        }
+      }
+
+      throw new Error('Failed to save Lark schedule');
+    }
+  }
+
+  // Lark 스케줄 조회
+  static async getLarkSchedule(): Promise<LarkConfig | null> {
+    try {
+      const response = await apiClient.get<LarkConfig>('/lark/schedule-config');
+      return response.data.enabled ? response.data : null;
+    } catch (error) {
+      console.error('Failed to get Lark schedule:', error);
+      return null;
+    }
+  }
+
+  // Lark 스케줄 삭제
+  static async deleteLarkSchedule(): Promise<{ success: boolean }> {
+    try {
+      const response = await apiClient.delete<{ success: boolean }>('/lark/schedule-config');
+      return response.data;
+    } catch (error) {
+      if (axios.isAxiosError(error)) {
+        const axiosError = error as AxiosError<ApiError>;
+
+        if (axiosError.response) {
+          const errorData = axiosError.response.data;
+          const errorMessage =
+            errorData?.message ||
+            errorData?.detail ||
+            errorData?.error ||
+            'Failed to delete Lark schedule';
+
+          throw new Error(errorMessage);
+        }
+      }
+
+      throw new Error('Failed to delete Lark schedule');
+    }
   }
 }

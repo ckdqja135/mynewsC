@@ -1,8 +1,8 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { NewsApiService } from '@/services/newsApi';
-import type { NewsAnalysisResponse, AnalysisType } from '@/types/news';
+import type { NewsAnalysisResponse, AnalysisType, ArticleWithSentiment, SentimentType, SentimentAnalysis, NewsArticle } from '@/types/news';
 import styles from './analyze.module.css';
 import Link from 'next/link';
 
@@ -14,6 +14,17 @@ export default function AnalyzePage() {
   const [error, setError] = useState('');
   const [analysis, setAnalysis] = useState<NewsAnalysisResponse | null>(null);
   const [excludedSources, setExcludedSources] = useState<Set<string>>(new Set());
+
+  // 감성 필터 관련 state
+  const [sentimentFilter, setSentimentFilter] = useState<Set<SentimentType>>(
+    new Set(['positive', 'negative', 'neutral'])
+  );
+  const [articlesWithSentiment, setArticlesWithSentiment] = useState<ArticleWithSentiment[]>([]);
+  const [sentimentCounts, setSentimentCounts] = useState({
+    positive: 0,
+    negative: 0,
+    neutral: 0
+  });
 
   useEffect(() => {
     // Load excluded sources from localStorage
@@ -29,6 +40,82 @@ export default function AnalyzePage() {
       }
     }
   }, []);
+
+  // 감성 분류 함수 (클라이언트 사이드)
+  const classifyArticlesBySentiment = useCallback((
+    articles: NewsArticle[],
+    sentiment: SentimentAnalysis | null
+  ): ArticleWithSentiment[] => {
+    if (!sentiment || !articles || articles.length === 0) {
+      return articles.map(a => ({
+        ...a,
+        sentiment: 'neutral' as SentimentType,
+        sentimentScore: 0,
+        matchedKeywords: []
+      }));
+    }
+
+    // 키워드 추출 함수
+    const extractKeywords = (text: string): string[] => {
+      if (!text) return [];
+      return text
+        .split(/\s+/)
+        .filter(w => w.length >= 2)
+        .filter((word, index, self) => self.indexOf(word) === index); // 중복 제거
+    };
+
+    // 긍정/부정 키워드 추출
+    const positiveKeywords = extractKeywords(
+      (sentiment.positive_aspects || []).join(' ')
+    );
+    const negativeKeywords = extractKeywords(
+      (sentiment.negative_aspects || []).join(' ')
+    );
+
+    return articles.map(article => {
+      const text = `${article.title} ${article.snippet || ''}`.toLowerCase();
+
+      // 키워드 매칭 점수 계산
+      const positiveScore = positiveKeywords.filter(k =>
+        text.includes(k.toLowerCase())
+      ).length;
+
+      const negativeScore = negativeKeywords.filter(k =>
+        text.includes(k.toLowerCase())
+      ).length;
+
+      // 감성 분류
+      if (positiveScore > negativeScore && positiveScore > 0) {
+        return {
+          ...article,
+          sentiment: 'positive' as SentimentType,
+          sentimentScore: positiveScore,
+          matchedKeywords: positiveKeywords
+        };
+      } else if (negativeScore > positiveScore && negativeScore > 0) {
+        return {
+          ...article,
+          sentiment: 'negative' as SentimentType,
+          sentimentScore: negativeScore,
+          matchedKeywords: negativeKeywords
+        };
+      } else {
+        return {
+          ...article,
+          sentiment: 'neutral' as SentimentType,
+          sentimentScore: 0,
+          matchedKeywords: []
+        };
+      }
+    });
+  }, []);
+
+  // 필터링된 기사 계산
+  const filteredArticles = useMemo(() => {
+    return articlesWithSentiment.filter(article =>
+      sentimentFilter.has(article.sentiment)
+    );
+  }, [articlesWithSentiment, sentimentFilter]);
 
   const handleAnalyze = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -53,6 +140,23 @@ export default function AnalyzePage() {
       });
 
       setAnalysis(result);
+
+      // 분석 완료 후 감성 분류 실행
+      // 임시로 빈 배열을 사용 (실제로는 API에서 articles를 반환하지 않음)
+      // 감성 분류는 분석 결과의 aspects 기반으로만 표시
+      const dummyArticles: NewsArticle[] = [];
+      const classified = classifyArticlesBySentiment(dummyArticles, result.sentiment);
+      setArticlesWithSentiment(classified);
+
+      // 감성별 개수 계산
+      const counts = classified.reduce(
+        (acc, article) => {
+          acc[article.sentiment]++;
+          return acc;
+        },
+        { positive: 0, negative: 0, neutral: 0 }
+      );
+      setSentimentCounts(counts);
     } catch (err) {
       setError(err instanceof Error ? err.message : '분석에 실패했습니다');
     } finally {

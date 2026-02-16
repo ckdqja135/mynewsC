@@ -57,6 +57,10 @@ ${context}
 
 IMPORTANT: Respond in Korean (한국어로 응답해주세요). All text fields should be in Korean.
 
+When analyzing sentiment:
+- **Positive aspects**: Good news, achievements, growth indicators (호재, 급등, 흥행, 호실적, 성공, 성장, 상승, 수상, 인기 등)
+- **Negative aspects**: Problems, criticism, negative indicators (논란, 비판, 하락, 급락, 실패, 사고, 문제, 손실 등)
+
 Please provide a detailed analysis in the following JSON format:
 {
     "summary": "A concise 2-3 sentence summary of what's happening with ${query}",
@@ -122,6 +126,10 @@ Respond ONLY with valid JSON. No additional text.`;
 ${context}
 
 IMPORTANT: Respond in Korean (한국어로 응답해주세요). All text fields should be in Korean.
+
+When analyzing sentiment, clearly distinguish:
+- **Positive aspects**: Good news, achievements, growth (호재, 급등, 급동, 흥행, 호실적, 대박, 성공, 성장, 상승, 수상, 호평, 인기, 완판 등)
+- **Negative aspects**: Problems, criticism, decline (논란, 비판, 하락, 급락, 실패, 사고, 문제, 리콜, 손실, 적자, 폐업 등)
 
 Provide a sentiment analysis in the following JSON format:
 {
@@ -289,6 +297,82 @@ Focus on factual, actionable information. Respond ONLY with valid JSON.`;
         generated_at: new Date().toISOString(),
       };
     }
+  }
+
+  /**
+   * 개별 기사의 감성 분석 (검색어 기준)
+   * @param {string} title - 기사 제목
+   * @param {string} query - 검색 키워드
+   * @returns {Promise<string>} 'positive', 'negative', 또는 'neutral'
+   */
+  async classifyArticleSentiment(title, query) {
+    const prompt = `기사 제목: "${title}"
+검색 키워드: "${query}"
+
+이 기사가 "${query}" 자체에 대해 어떤 감성을 나타내는지 분류하세요.
+
+**중요**: 회사의 주가, 재무, 실적 문제는 제품/콘텐츠 자체의 문제가 아닙니다.
+- 예시: "티니핑" 검색 시 → "SAMG엔터 주가 하락" = neutral (회사 문제 ≠ 티니핑 문제)
+- 예시: "티니핑" 검색 시 → "티니핑 흥행" = positive (티니핑 자체의 성공)
+- 예시: "티니핑" 검색 시 → "티니핑 논란" = negative (티니핑 자체의 문제)
+
+**positive (긍정)**: ${query} 자체에 대한 좋은 소식이나 성과
+ 예시: 호재, 급등, 급동, 흥행, 대박, 호실적, 호평, 성공, 성장, 인기, 완판, 매진, 수상, 1위
+
+**negative (부정)**: ${query} 자체에 대한 문제나 비판
+ 예시: 논란, 비판, 실패, 사고, 문제, 리콜, 적발, 표절, 하자, 오류
+
+**neutral (중립)**: 단순 사실 전달이거나, ${query}와 관련된 회사/인물의 재무/주가 문제
+
+응답은 반드시 positive, negative, neutral 중 정확히 하나만 출력하세요.`;
+
+    try {
+      const response = await this.client.chat.completions.create({
+        model: this.model,
+        messages: [
+          { role: 'system', content: 'You are a sentiment analysis expert. Respond with only one word: positive, negative, or neutral.' },
+          { role: 'user', content: prompt },
+        ],
+        temperature: 0.1,
+        max_tokens: 10,
+      });
+
+      const result = response.choices[0].message.content.trim().toLowerCase();
+
+      // 결과 검증
+      if (result.includes('positive')) return 'positive';
+      if (result.includes('negative')) return 'negative';
+      if (result.includes('neutral')) return 'neutral';
+
+      // 기본값
+      return 'neutral';
+    } catch (error) {
+      console.error(`[LLM] Sentiment analysis failed: ${error.message}`);
+      return 'neutral';
+    }
+  }
+
+  /**
+   * 여러 기사의 감성 분석 (병렬 처리)
+   * @param {Array} articles - 기사 배열
+   * @param {string} query - 검색 키워드
+   * @returns {Promise<Array>} 감성이 태그된 기사 배열
+   */
+  async analyzeSentimentBatch(articles, query) {
+    console.log(`[LLM] Analyzing sentiment for ${articles.length} articles...`);
+
+    // 병렬 처리로 성능 향상
+    const sentimentPromises = articles.map(async (article) => {
+      const sentiment = await this.classifyArticleSentiment(article.title, query);
+      return {
+        ...article,
+        sentiment,
+      };
+    });
+
+    const results = await Promise.all(sentimentPromises);
+    console.log(`[LLM] Sentiment analysis completed`);
+    return results;
   }
 }
 

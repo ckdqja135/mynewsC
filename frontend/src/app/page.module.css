@@ -272,6 +272,69 @@
   white-space: nowrap;
 }
 
+/* 감성 필터 (컴팩트 버전 - 검색 폼 안) */
+.sentimentFilterCompact {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 11.5px 16px;
+  background: var(--bg-hover);
+  border-radius: 12px;
+  border: 2px solid var(--border-color);
+  transition: all 0.2s ease;
+}
+
+.sentimentFilterCompact:hover {
+  border-color: var(--accent-color);
+  background: var(--bg-secondary);
+}
+
+.sentimentFilterLabel {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  white-space: nowrap;
+  margin-right: 4px;
+}
+
+.sentimentCheckbox {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  cursor: pointer;
+  padding: 4px 8px;
+  border-radius: 6px;
+  transition: all 0.2s ease;
+  background: var(--bg-secondary);
+  border: 2px solid transparent;
+}
+
+.sentimentCheckbox:hover {
+  background: var(--bg-primary);
+  border-color: var(--border-color);
+}
+
+.sentimentCheckbox input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  cursor: pointer;
+  accent-color: var(--accent-color);
+}
+
+.sentimentCheckbox input[type="checkbox"]:checked + .sentimentText {
+  font-weight: 700;
+  color: var(--accent-color);
+}
+
+.sentimentText {
+  font-size: 13px;
+  line-height: 1;
+  font-weight: 500;
+  color: var(--text-secondary);
+  transition: all 0.2s ease;
+  user-select: none;
+  white-space: nowrap;
+}
 
 /* 유사도 점수 배지 */
 .similarityBadge {
@@ -1349,6 +1412,20 @@
     min-width: 80px;
   }
 
+  .sentimentFilterCompact {
+    width: 100%;
+    min-width: 0;
+    justify-content: flex-start;
+  }
+
+  .sentimentFilterLabel {
+    font-size: 12px;
+  }
+
+  .sentimentText {
+    font-size: 12px;
+  }
+
   .modeButtons {
     flex-direction: column;
   }
@@ -2281,5 +2358,74 @@
 
   .analysisPanelContent {
     max-height: none;
+  }
+}
+
+/* 감성 필터 섹션 */
+.sentimentFilterSection {
+  margin: 20px 0;
+  padding: 16px 20px;
+  background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.sentimentFilterHeader {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.sentimentButtons {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.sentimentButton {
+  transition: transform 0.2s, box-shadow 0.2s;
+}
+
+.sentimentButton:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
+.checkboxGroup {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.checkboxLabel {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  font-size: 14px;
+}
+
+.checkboxLabel input[type="checkbox"] {
+  width: 18px;
+  height: 18px;
+  cursor: pointer;
+}
+
+@media (max-width: 768px) {
+  .sentimentFilterSection {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .sentimentButtons {
+    width: 100%;
+  }
+
+  .sentimentButton {
+    flex: 1;
+    min-width: 100px;
   }
 }

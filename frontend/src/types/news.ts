@@ -68,6 +68,7 @@ export interface NewsAnalysisRequest {
   analysis_type?: AnalysisType;
   days_back?: number;
   excluded_sources?: string[];
+  articles?: NewsArticle[] | NewsArticleWithScore[]; // 필터링된 기사 전달 가능
 }
 
 export interface NewsAnalysisResponse {
@@ -79,4 +80,43 @@ export interface NewsAnalysisResponse {
   sentiment: SentimentAnalysis | null;
   trends: TrendAnalysis | null;
   generated_at: string;
+}
+
+// 감성 타입
+export type SentimentType = 'positive' | 'negative' | 'neutral';
+
+// 감성이 태그된 기사
+export interface ArticleWithSentiment extends NewsArticle {
+  sentiment: SentimentType;
+  sentimentScore: number;
+  matchedKeywords: string[];
+}
+
+// Lark 설정
+export interface LarkConfig {
+  enabled: boolean;
+  schedule: string; // cron expression
+  webhookUrl: string;
+  query: string;
+  sentimentTypes: SentimentType[];
+  num: number;
+  excluded_sources: string[];
+}
+
+// Lark 수동 전송 요청
+export interface LarkSendRequest {
+  webhookUrl: string;
+  query: string;
+  sentimentTypes: SentimentType[];
+  num?: number;
+  excluded_sources?: string[];
+}
+
+// Lark 전송 응답
+export interface LarkSendResponse {
+  success: boolean;
+  message: string;
+  articlesSent: number;
+  totalArticles: number;
+  timestamp: string;
 }

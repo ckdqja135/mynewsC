@@ -11,7 +11,8 @@
       "WebFetch(domain:support.google.com)",
       "WebFetch(domain:serpapi.com)",
       "Bash(node -e:*)",
-      "Bash(node:*)"
+      "Bash(node:*)",
+      "Bash(npm install:*)"
     ]
   }
 }

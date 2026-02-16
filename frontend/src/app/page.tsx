@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useMemo } from 'react';
 import { NewsApiService } from '@/services/newsApi';
-import type { NewsArticle, NewsArticleWithScore, SearchMode, NewsAnalysisResponse } from '@/types/news';
+import type { NewsArticle, NewsArticleWithScore, SearchMode, NewsAnalysisResponse, SentimentType, LarkConfig } from '@/types/news';
 import styles from './page.module.css';
 import Link from 'next/link';
 
@@ -125,6 +125,7 @@ export default function Home() {
 
   // 설정 모달
   const [showSettings, setShowSettings] = useState<boolean>(false);
+  const [settingsTab, setSettingsTab] = useState<'auto-search' | 'lark'>('auto-search');
   const [defaultQuery, setDefaultQuery] = useState<string>('');
   const [defaultSearchMode, setDefaultSearchMode] = useState<SearchMode>('keyword');
   const [defaultMinSimilarity, setDefaultMinSimilarity] = useState<number>(0.3);
@@ -141,8 +142,25 @@ export default function Home() {
   const [analysisError, setAnalysisError] = useState<string>('');
   const [showAnalysisPanel, setShowAnalysisPanel] = useState<boolean>(true);
 
+  // 감성 필터 상태 (AI 검색용)
+  const [sentimentFilter, setSentimentFilter] = useState<Set<SentimentType>>(
+    new Set(['positive', 'negative', 'neutral'])
+  );
+
   // 모바일 탭 상태 (검색 결과 / 분석 결과)
   const [mobileTab, setMobileTab] = useState<'results' | 'analysis'>('results');
+
+  // Lark 설정 상태
+  const [larkEnabled, setLarkEnabled] = useState(false);
+  const [larkWebhookUrl, setLarkWebhookUrl] = useState('');
+  const [larkSchedule, setLarkSchedule] = useState('0 9 * * *');
+  const [larkCustomSchedule, setLarkCustomSchedule] = useState('');
+  const [larkSentimentTypes, setLarkSentimentTypes] = useState<Set<SentimentType>>(
+    new Set(['negative'])
+  );
+  const [larkQuery, setLarkQuery] = useState('');
+  const [larkTestLoading, setLarkTestLoading] = useState(false);
+  const [larkTestMessage, setLarkTestMessage] = useState('');
 
   useEffect(() => {
     const savedTheme = localStorage.getItem('theme') as Theme;
@@ -232,6 +250,24 @@ export default function Home() {
         console.error('Failed to load excluded sources:', e);
       }
     }
+
+    // Lark 설정 로드
+    const loadLarkConfig = async () => {
+      try {
+        const config = await NewsApiService.getLarkSchedule();
+        if (config) {
+          setLarkEnabled(config.enabled);
+          setLarkWebhookUrl(config.webhookUrl);
+          setLarkSchedule(config.schedule);
+          setLarkQuery(config.query);
+          setLarkSentimentTypes(new Set(config.sentimentTypes));
+        }
+      } catch (error) {
+        console.error('Failed to load Lark config:', error);
+      }
+    };
+
+    loadLarkConfig();
   }, []);
 
   // 백엔드에서 필터링하므로 프론트엔드 필터링은 불필요
@@ -281,7 +317,55 @@ export default function Home() {
     document.documentElement.setAttribute('data-theme', newTheme);
   };
 
-  const saveAutoSearchSettings = () => {
+  // Lark 테스트 전송
+  const handleSendTestLark = async () => {
+    if (!larkWebhookUrl || !larkQuery) {
+      setLarkTestMessage('Webhook URL과 검색어를 입력해주세요');
+      return;
+    }
+
+    setLarkTestLoading(true);
+    setLarkTestMessage('');
+
+    try {
+      const result = await NewsApiService.sendLarkManual({
+        webhookUrl: larkWebhookUrl,
+        query: larkQuery,
+        sentimentTypes: Array.from(larkSentimentTypes),
+        num: 20,
+        excluded_sources: Array.from(excludedSources)
+      });
+
+      setLarkTestMessage(`✅ 전송 성공! ${result.articlesSent}개 기사 전송됨`);
+      setTimeout(() => setLarkTestMessage(''), 5000);
+    } catch (error) {
+      setLarkTestMessage(`❌ 전송 실패: ${error instanceof Error ? error.message : '알 수 없는 오류'}`);
+    } finally {
+      setLarkTestLoading(false);
+    }
+  };
+
+  // Lark 설정 저장
+  const saveLarkConfig = async () => {
+    try {
+      const config: LarkConfig = {
+        enabled: larkEnabled,
+        schedule: larkSchedule === 'custom' ? larkCustomSchedule : larkSchedule,
+        webhookUrl: larkWebhookUrl,
+        query: larkQuery,
+        sentimentTypes: Array.from(larkSentimentTypes),
+        num: maxArticles,
+        excluded_sources: Array.from(excludedSources)
+      };
+
+      await NewsApiService.saveLarkSchedule(config);
+    } catch (error) {
+      console.error('Failed to save Lark config:', error);
+      throw error;
+    }
+  };
+
+  const saveAutoSearchSettings = async () => {
     const settings = {
       enabled: autoSearchEnabled,
       query: defaultQuery,
@@ -294,7 +378,113 @@ export default function Home() {
     // 제외할 언론사 저장
     localStorage.setItem('excludedSources', JSON.stringify(Array.from(excludedSources)));
 
+    // Lark 설정도 함께 저장
+    if (settingsTab === 'lark') {
+      try {
+        await saveLarkConfig();
+      } catch (error) {
+        alert('Lark 설정 저장 실패: ' + (error instanceof Error ? error.message : '알 수 없는 오류'));
+        return;
+      }
+    }
+
     setShowSettings(false);
+  };
+
+  // 기사 감성 분류 함수
+  const classifyArticlesBySentiment = (articles: NewsArticleWithScore[], sentiment: any, searchQuery: string) => {
+    if (!sentiment || !articles || articles.length === 0) {
+      return articles.map(a => ({ ...a, sentiment: 'neutral' as SentimentType }));
+    }
+
+    // 검색 키워드 정규화
+    const queryKeywords = searchQuery.toLowerCase().split(/\s+/).filter(w => w.length >= 2);
+
+    // 강제 부정 키워드 (매우 명확한 부정적 사건만)
+    const forceNegativeKeywords = [
+      '이물질 검출', '리콜', '회수 조치', '사망자', '사망 사고', '폭발 사고', '화재 발생',
+      '중상자', '사상자 발생', '오염 물질', '유해 물질', '독성 물질',
+      '발암 물질', '위반 적발', '구속', '체포', '불법 행위',
+      '횡령', '배임', '결함 발견', '불량품', '제품 하자',
+      '오작동 사고', '붕괴 사고', '침수 피해', '침몰 사고', '추락 사고',
+      '누출 사고', '유출 사고', '집단 감염', '확진자 급증'
+    ];
+
+    // 강제 긍정 키워드 (명확한 성과/긍정 지표)
+    const forcePositiveKeywords = [
+      '대상 수상', '최고상 수상', '1위 달성', '우승', '세계 최초', '국내 최초',
+      '신기록 달성', '쾌거', '극찬', '혁신상',
+      '호재', '급등', '급동', '호실적', '대박', '흥행', '호평', '완판',
+      '성공적', '성과', '수상', '쾌속', '상승세', '호조', '성장세',
+      '돌풍', '인기', '매진', '최고 실적', '역대 최고', '기록 경신'
+    ];
+
+    const extractKeywords = (text: string): string[] => {
+      if (!text) return [];
+      return text.split(/\s+/).filter(w => w.length >= 2);
+    };
+
+    const positiveKeywords = extractKeywords(
+      (sentiment.positive_aspects || []).join(' ')
+    );
+    const negativeKeywords = extractKeywords(
+      (sentiment.negative_aspects || []).join(' ')
+    );
+
+    return articles.map(article => {
+      const title = (article.title || '').toLowerCase();
+      const snippet = (article.snippet || '').toLowerCase();
+
+      // 0단계: 검색 키워드가 제목에 포함되어 있는지 확인 (제목 중심 분류)
+      const titleHasQuery = queryKeywords.some(qk => title.includes(qk));
+
+      // 제목에 검색 키워드가 없으면 중립으로 처리
+      if (!titleHasQuery) {
+        return { ...article, sentiment: 'neutral' as SentimentType };
+      }
+
+      // 1단계: 강제 키워드 체크 (제목에만 적용)
+      for (const keyword of forceNegativeKeywords) {
+        if (title.includes(keyword)) {
+          return { ...article, sentiment: 'negative' as SentimentType };
+        }
+      }
+      for (const keyword of forcePositiveKeywords) {
+        if (title.includes(keyword)) {
+          return { ...article, sentiment: 'positive' as SentimentType };
+        }
+      }
+
+      // 2단계: LLM 키워드 기반 분류 (제목에서만 매칭)
+      let positiveScore = 0;
+      let negativeScore = 0;
+
+      // 제목에서만 키워드 매칭
+      positiveKeywords.forEach(k => {
+        if (title.includes(k.toLowerCase())) {
+          positiveScore += 1;
+        }
+      });
+      negativeKeywords.forEach(k => {
+        if (title.includes(k.toLowerCase())) {
+          negativeScore += 1;
+        }
+      });
+
+      // 임계값: 제목에 최소 1개 키워드 이상, 명확한 차이가 있을 때만 분류
+      const threshold = 1;
+      const minDifference = 1;
+
+      let articleSentiment: SentimentType = 'neutral';
+
+      if (positiveScore >= threshold && positiveScore > negativeScore && positiveScore - negativeScore >= minDifference) {
+        articleSentiment = 'positive';
+      } else if (negativeScore >= threshold && negativeScore > positiveScore && negativeScore - positiveScore >= minDifference) {
+        articleSentiment = 'negative';
+      }
+
+      return { ...article, sentiment: articleSentiment };
+    });
   };
 
   const performAnalysis = async (searchQuery: string) => {
@@ -303,18 +493,64 @@ export default function Home() {
     setMobileTab('results'); // 분석 시작 시 결과 탭으로
 
     try {
+      // 1단계: 먼저 모든 기사에 대해 LLM 기반 감성 분류 수행
+      let classifiedArticles = articles;
+      let filteredArticlesForAnalysis = articles;
+
+      if (articles.length > 0) {
+        try {
+          console.log('[AI] Step 1: Classifying sentiment with LLM for', articles.length, 'articles...');
+          console.log('[AI] Selected sentiment types:', Array.from(sentimentFilter));
+
+          // 모든 기사를 분류 (필터링 없이)
+          const classificationResult = await NewsApiService.classifySentiment(
+            articles,
+            searchQuery,
+            ['positive', 'negative', 'neutral'] // 전체 분류 (필터링은 나중에)
+          );
+
+          classifiedArticles = classificationResult.articles;
+          console.log('[AI] Classification completed:', classificationResult.allStatistics);
+
+          // 선택된 감성 타입으로 필터링
+          filteredArticlesForAnalysis = classifiedArticles.filter((article: any) =>
+            sentimentFilter.has(article.sentiment)
+          );
+
+          console.log('[AI] Filtered for analysis:', filteredArticlesForAnalysis.length, 'articles');
+          console.log('[AI] Sentiment filter:', Array.from(sentimentFilter));
+
+        } catch (classifyError) {
+          console.error('[AI] LLM sentiment classification failed:', classifyError);
+          // 실패 시 전체 기사로 진행
+          filteredArticlesForAnalysis = articles;
+        }
+      }
+
+      // 2단계: 필터링된 기사만 LLM으로 분석
+      console.log('[AI] Step 2: Analyzing', filteredArticlesForAnalysis.length, 'filtered articles...');
+
       const response = await NewsApiService.analyzeNews({
         q: searchQuery,
         hl: 'ko',
         gl: 'kr',
-        num: 100,  // Analyze up to 100 articles
+        num: 100,
         analysis_type: 'comprehensive',
-        days_back: 30,  // Analyze articles from the last 30 days
+        days_back: 30,
         excluded_sources: Array.from(excludedSources),
+        articles: filteredArticlesForAnalysis, // 필터링된 기사만 전달
       });
 
       setAnalysisData(response);
       setShowAnalysisPanel(true);
+
+      // 3단계: 분류된 기사를 화면에 업데이트 (감성 필터 적용)
+      const displayArticles = classifiedArticles.filter((article: any) =>
+        sentimentFilter.has(article.sentiment)
+      );
+      setArticles(displayArticles);
+
+      console.log('[AI] Analysis completed. Displaying', displayArticles.length, 'articles');
 
       // 시맨틱 검색 캐시에 분석 결과 업데이트
       setSemanticSearchCache(prev => {
@@ -413,11 +649,6 @@ export default function Home() {
         responseTotal = response.total;
         setArticles(response.articles);
         setTotal(response.total);
-
-        // 시맨틱 검색 완료 후 자동으로 분석 실행
-        if (response.articles.length > 0) {
-          performAnalysis(searchQuery);
-        }
       } else {
         // 키워드 검색
         const response = await NewsApiService.searchNews({
@@ -456,6 +687,17 @@ export default function Home() {
           analysisData: null, // 분석은 나중에 업데이트
         });
       }
+
+      // 감성 필터가 부분적으로만 선택된 경우 (전체 선택이 아닌 경우)
+      // 자동으로 AI 분석 + 감성 분류 실행
+      const allSentimentsSelected = sentimentFilter.size === 3; // positive, negative, neutral 모두 선택
+      const noSentimentSelected = sentimentFilter.size === 0;
+
+      if (!allSentimentsSelected && !noSentimentSelected && responseArticles.length > 0) {
+        console.log('[Search] Sentiment filter detected, automatically running analysis...');
+        // 검색 완료 후 자동으로 분석 실행 (async로 실행하여 검색 완료를 차단하지 않음)
+        performAnalysis(searchQuery);
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : '뉴스를 불러오는데 실패했습니다');
       setArticles([]);
@@ -491,6 +733,14 @@ export default function Home() {
 
     if (showBookmarksOnly) {
       result = result.filter(article => bookmarkedArticles.has(article.id));
+    }
+
+    // 감성 필터링 (AI 검색 시)
+    if (searchMode === 'semantic' && analysisData) {
+      result = result.filter(article => {
+        const articleWithSentiment = article as any;
+        return articleWithSentiment.sentiment && sentimentFilter.has(articleWithSentiment.sentiment);
+      });
     }
 
     // 날짜 필터링
@@ -774,6 +1024,61 @@ export default function Home() {
               </span>
             </div>
           )}
+
+          {/* AI 검색 시 감성 필터 */}
+          {searchMode === 'semantic' && (
+            <div className={styles.sentimentFilterCompact}>
+              <span className={styles.sentimentFilterLabel}>감성</span>
+              <label className={styles.sentimentCheckbox} title="긍정 기사만">
+                <input
+                  type="checkbox"
+                  checked={sentimentFilter.has('positive')}
+                  onChange={(e) => {
+                    const newFilter = new Set(sentimentFilter);
+                    if (e.target.checked) {
+                      newFilter.add('positive');
+                    } else {
+                      newFilter.delete('positive');
+                    }
+                    setSentimentFilter(newFilter);
+                  }}
+                />
+                <span className={styles.sentimentText}>긍정</span>
+              </label>
+              <label className={styles.sentimentCheckbox} title="부정 기사만">
+                <input
+                  type="checkbox"
+                  checked={sentimentFilter.has('negative')}
+                  onChange={(e) => {
+                    const newFilter = new Set(sentimentFilter);
+                    if (e.target.checked) {
+                      newFilter.add('negative');
+                    } else {
+                      newFilter.delete('negative');
+                    }
+                    setSentimentFilter(newFilter);
+                  }}
+                />
+                <span className={styles.sentimentText}>부정</span>
+              </label>
+              <label className={styles.sentimentCheckbox} title="중립 기사만">
+                <input
+                  type="checkbox"
+                  checked={sentimentFilter.has('neutral')}
+                  onChange={(e) => {
+                    const newFilter = new Set(sentimentFilter);
+                    if (e.target.checked) {
+                      newFilter.add('neutral');
+                    } else {
+                      newFilter.delete('neutral');
+                    }
+                    setSentimentFilter(newFilter);
+                  }}
+                />
+                <span className={styles.sentimentText}>중립</span>
+              </label>
+            </div>
+          )}
         </form>
 
         {/* 검색 중 로딩 표시 */}
@@ -1049,6 +1354,25 @@ export default function Home() {
                   />
                 )}
                 <div className={styles.content}>
+                  {/* 감성 배지 (AI 검색 + 분석 완료 시) */}
+                  {searchMode === 'semantic' && analysisData && (article as any).sentiment && (
+                    <div style={{ marginBottom: '8px' }}>
+                      <span style={{
+                        display: 'inline-block',
+                        padding: '4px 12px',
+                        borderRadius: '12px',
+                        fontSize: '12px',
+                        fontWeight: 600,
+                        backgroundColor: (article as any).sentiment === 'positive' ? '#e8f5e9' :
+                                        (article as any).sentiment === 'negative' ? '#ffebee' : '#fff3e0',
+                        color: (article as any).sentiment === 'positive' ? '#4caf50' :
+                               (article as any).sentiment === 'negative' ? '#f44336' : '#ff9800'
+                      }}>
+                        {(article as any).sentiment === 'positive' ? '😊 긍정' :
+                         (article as any).sentiment === 'negative' ? '😟 부정' : '😐 중립'}
+                      </span>
+                    </div>
+                  )}
                   {/* 시맨틱 검색 시 유사도 점수 배지 */}
                   {hasSimilarityScore && (
                     <div className={styles.similarityBadge}>
@@ -1354,7 +1678,51 @@ export default function Home() {
               </button>
             </div>
 
+            {/* 탭 메뉴 */}
+            <div style={{
+              display: 'flex',
+              borderBottom: '2px solid #e0e0e0',
+              marginBottom: '24px'
+            }}>
+              <button
+                onClick={() => setSettingsTab('auto-search')}
+                style={{
+                  flex: 1,
+                  padding: '16px',
+                  background: settingsTab === 'auto-search' ? 'white' : 'transparent',
+                  border: 'none',
+                  borderBottom: settingsTab === 'auto-search' ? '3px solid #667eea' : 'none',
+                  fontWeight: settingsTab === 'auto-search' ? 600 : 400,
+                  fontSize: '15px',
+                  cursor: 'pointer',
+                  color: settingsTab === 'auto-search' ? '#667eea' : '#666',
+                  transition: 'all 0.2s'
+                }}
+              >
+                🔍 자동 검색 설정
+              </button>
+              <button
+                onClick={() => setSettingsTab('lark')}
+                style={{
+                  flex: 1,
+                  padding: '16px',
+                  background: settingsTab === 'lark' ? 'white' : 'transparent',
+                  border: 'none',
+                  borderBottom: settingsTab === 'lark' ? '3px solid #667eea' : 'none',
+                  fontWeight: settingsTab === 'lark' ? 600 : 400,
+                  fontSize: '15px',
+                  cursor: 'pointer',
+                  color: settingsTab === 'lark' ? '#667eea' : '#666',
+                  transition: 'all 0.2s'
+                }}
+              >
+                🔔 Lark 알림 설정
+              </button>
+            </div>
+
             <div className={styles.modalBody}>
+              {/* 자동 검색 설정 탭 */}
+              {settingsTab === 'auto-search' && (
               <div className={styles.settingSection}>
                 <h3 className={styles.sectionTitle}>자동 검색 설정</h3>
 
@@ -1463,6 +1831,241 @@ export default function Home() {
                   </div>
                 </div>
               </div>
+              )}
+
+              {/* Lark 알림 설정 탭 */}
+              {settingsTab === 'lark' && (
+              <div className={styles.settingSection}>
+                <h3 className={styles.sectionTitle}>⚙️ 기본 설정</h3>
+
+                <div className={styles.settingItem}>
+                  <label className={styles.toggleLabel}>
+                    <input
+                      type="checkbox"
+                      checked={larkEnabled}
+                      onChange={(e) => setLarkEnabled(e.target.checked)}
+                      className={styles.toggleCheckbox}
+                    />
+                    <span className={styles.toggleText}>정기 알림 활성화</span>
+                  </label>
+                  <p className={styles.helpText}>
+                    활성화하면 설정한 주기마다 자동으로 뉴스를 분석하여 Lark로 전송합니다
+                  </p>
+                </div>
+
+                <div className={styles.settingItem}>
+                  <label className={styles.settingLabel}>Webhook URL *</label>
+                  <input
+                    type="text"
+                    value={larkWebhookUrl}
+                    onChange={(e) => setLarkWebhookUrl(e.target.value)}
+                    placeholder="https://open.larksuite.com/open-apis/bot/v2/hook/..."
+                    className={styles.settingInput}
+                  />
+                  <p className={styles.helpText}>
+                    Lark 봇 설정에서 Webhook URL을 복사하여 입력하세요
+                  </p>
+                </div>
+
+                <div className={styles.settingItem}>
+                  <label className={styles.settingLabel}>검색어 *</label>
+                  <input
+                    type="text"
+                    value={larkQuery}
+                    onChange={(e) => setLarkQuery(e.target.value)}
+                    placeholder="예: AI 뉴스, 경제 동향, 기술 트렌드"
+                    className={styles.settingInput}
+                  />
+                  <p className={styles.helpText}>
+                    이 검색어로 뉴스를 수집하고 분석합니다
+                  </p>
+                </div>
+
+                <h3 className={styles.sectionTitle} style={{ marginTop: '32px' }}>⏰ 알림 주기</h3>
+
+                <div className={styles.settingItem}>
+                  <label className={styles.settingLabel}>스케줄 선택</label>
+                  <select
+                    value={larkSchedule}
+                    onChange={(e) => setLarkSchedule(e.target.value)}
+                    className={styles.settingInput}
+                  >
+                    <option value="0 9 * * *">매일 오전 9시</option>
+                    <option value="0 9 * * 1-5">평일 오전 9시</option>
+                    <option value="0 9,18 * * *">매일 오전 9시, 오후 6시</option>
+                    <option value="0 */6 * * *">6시간마다</option>
+                    <option value="0 9 * * 1">매주 월요일 9시</option>
+                    <option value="custom">직접 입력 (cron 표현식)</option>
+                  </select>
+
+                  {larkSchedule === 'custom' && (
+                    <input
+                      type="text"
+                      value={larkCustomSchedule}
+                      onChange={(e) => setLarkCustomSchedule(e.target.value)}
+                      placeholder="0 9 * * * (분 시 일 월 요일)"
+                      className={styles.settingInput}
+                      style={{ marginTop: '12px' }}
+                    />
+                  )}
+                  <p className={styles.helpText}>
+                    Cron 표현식 예시: "0 9 * * *" = 매일 오전 9시 (서버 시간대: Asia/Seoul)
+                  </p>
+                </div>
+
+                <h3 className={styles.sectionTitle} style={{ marginTop: '32px' }}>🎯 감성 필터</h3>
+
+                <div className={styles.settingItem}>
+                  <label className={styles.settingLabel}>알림받을 감성 유형</label>
+                  <div className={styles.checkboxGroup}>
+                    <label className={styles.checkboxLabel}>
+                      <input
+                        type="checkbox"
+                        checked={larkSentimentTypes.has('negative')}
+                        onChange={(e) => {
+                          const newTypes = new Set(larkSentimentTypes);
+                          if (e.target.checked) {
+                            newTypes.add('negative');
+                          } else {
+                            newTypes.delete('negative');
+                          }
+                          setLarkSentimentTypes(newTypes);
+                        }}
+                      />
+                      <span className={styles.sentimentBadge} style={{ backgroundColor: '#ffebee', color: '#f44336', padding: '6px 14px', borderRadius: '16px', fontWeight: 600, fontSize: '14px' }}>
+                        😟 부정 뉴스
+                      </span>
+                    </label>
+                    <label className={styles.checkboxLabel}>
+                      <input
+                        type="checkbox"
+                        checked={larkSentimentTypes.has('positive')}
+                        onChange={(e) => {
+                          const newTypes = new Set(larkSentimentTypes);
+                          if (e.target.checked) {
+                            newTypes.add('positive');
+                          } else {
+                            newTypes.delete('positive');
+                          }
+                          setLarkSentimentTypes(newTypes);
+                        }}
+                      />
+                      <span className={styles.sentimentBadge} style={{ backgroundColor: '#e8f5e9', color: '#4caf50', padding: '6px 14px', borderRadius: '16px', fontWeight: 600, fontSize: '14px' }}>
+                        😊 긍정 뉴스
+                      </span>
+                    </label>
+                    <label className={styles.checkboxLabel}>
+                      <input
+                        type="checkbox"
+                        checked={larkSentimentTypes.has('neutral')}
+                        onChange={(e) => {
+                          const newTypes = new Set(larkSentimentTypes);
+                          if (e.target.checked) {
+                            newTypes.add('neutral');
+                          } else {
+                            newTypes.delete('neutral');
+                          }
+                          setLarkSentimentTypes(newTypes);
+                        }}
+                      />
+                      <span className={styles.sentimentBadge} style={{ backgroundColor: '#fff3e0', color: '#ff9800', padding: '6px 14px', borderRadius: '16px', fontWeight: 600, fontSize: '14px' }}>
+                        😐 중립 뉴스
+                      </span>
+                    </label>
+                  </div>
+                  <p className={styles.helpText}>
+                    선택한 감성의 기사만 Lark로 전송됩니다
+                  </p>
+                </div>
+
+                <div className={styles.settingItem}>
+                  <label className={styles.settingLabel}>최대 기사 수</label>
+                  <select
+                    value={maxArticles}
+                    onChange={(e) => setMaxArticles(Number(e.target.value))}
+                    className={styles.settingInput}
+                  >
+                    <option value={50}>50개 (빠름)</option>
+                    <option value={100}>100개 (보통)</option>
+                    <option value={200}>200개 (권장)</option>
+                    <option value={300}>300개</option>
+                    <option value={500}>500개</option>
+                  </select>
+                  <p className={styles.helpText}>
+                    크롤링할 최대 기사 수입니다. Lark 메시지에는 상위 10개만 전송됩니다
+                  </p>
+                </div>
+
+                <h3 className={styles.sectionTitle} style={{ marginTop: '32px' }}>🧪 테스트</h3>
+
+                <div className={styles.settingItem}>
+                  <button
+                    onClick={handleSendTestLark}
+                    disabled={larkTestLoading || !larkWebhookUrl || !larkQuery}
+                    className={styles.testButton}
+                    style={{
+                      width: '100%',
+                      padding: '14px 24px',
+                      background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+                      color: 'white',
+                      border: 'none',
+                      borderRadius: '8px',
+                      fontSize: '15px',
+                      fontWeight: 600,
+                      cursor: larkTestLoading || !larkWebhookUrl || !larkQuery ? 'not-allowed' : 'pointer',
+                      opacity: larkTestLoading || !larkWebhookUrl || !larkQuery ? 0.5 : 1
+                    }}
+                  >
+                    {larkTestLoading ? '전송 중...' : '테스트 전송'}
+                  </button>
+                  <p className={styles.helpText}>
+                    현재 설정으로 Lark 메시지를 즉시 전송해봅니다
+                  </p>
+                  {larkTestMessage && (
+                    <div style={{
+                      padding: '12px 16px',
+                      background: larkTestMessage.startsWith('✅') ? '#e8f5e9' : '#ffebee',
+                      border: `2px solid ${larkTestMessage.startsWith('✅') ? '#4caf50' : '#f44336'}`,
+                      borderRadius: '8px',
+                      color: larkTestMessage.startsWith('✅') ? '#2e7d32' : '#c62828',
+                      fontWeight: 500,
+                      textAlign: 'center',
+                      marginTop: '12px'
+                    }}>
+                      {larkTestMessage}
+                    </div>
+                  )}
+                </div>
+
+                <div style={{
+                  marginTop: '32px',
+                  padding: '20px',
+                  background: '#f8f9fa',
+                  borderRadius: '12px',
+                  border: '1px solid #e0e0e0'
+                }}>
+                  <h4 style={{ margin: '0 0 12px 0', fontSize: '16px', color: '#333' }}>💡 감성 분류 기준</h4>
+                  <div style={{ fontSize: '14px', lineHeight: '1.6', color: '#555' }}>
+                    <p style={{ margin: '0 0 12px 0' }}>AI가 뉴스 전체를 분석하여 감성을 판단합니다:</p>
+                    <ol style={{ margin: '0', paddingLeft: '20px' }}>
+                      <li style={{ marginBottom: '8px' }}><strong>긍정/부정 키워드 추출:</strong> AI가 "긍정적 측면"과 "부정적 측면"에서 키워드를 추출합니다</li>
+                      <li style={{ marginBottom: '8px' }}><strong>기사별 매칭:</strong> 각 기사의 제목과 본문에서 키워드가 얼마나 나타나는지 카운트합니다</li>
+                      <li style={{ marginBottom: '8px' }}><strong>감성 결정:</strong>
+                        <ul style={{ marginTop: '4px', paddingLeft: '20px' }}>
+                          <li>긍정 키워드 &gt; 부정 키워드 → <strong style={{ color: '#4caf50' }}>긍정</strong></li>
+                          <li>부정 키워드 &gt; 긍정 키워드 → <strong style={{ color: '#f44336' }}>부정</strong></li>
+                          <li>비슷하거나 키워드 없음 → <strong style={{ color: '#ff9800' }}>중립</strong></li>
+                        </ul>
+                      </li>
+                    </ol>
+                    <p style={{ marginTop: '12px', fontSize: '13px', color: '#666' }}>
+                      예시: AI가 "경제 성장, 투자 증가"를 긍정 키워드로, "위험 증가, 규제 강화"를 부정 키워드로 추출했다면,
+                      "경제 성장과 투자 증가"가 포함된 기사는 긍정으로 분류됩니다.
+                    </p>
+                  </div>
+                </div>
+              </div>
+              )}
             </div>
 
             <div className={styles.modalFooter}>
