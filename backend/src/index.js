@@ -55,6 +55,16 @@ try {
 const { ArticleSentimentClassifier } = require('./services/articleSentimentClassifier');
 const sentimentClassifier = new ArticleSentimentClassifier();
 
+// Sentiment Trainer (embedding-based classifier)
+let sentimentTrainer = null;
+try {
+  const { getSentimentTrainer } = require('./services/sentimentTrainer');
+  sentimentTrainer = getSentimentTrainer();
+} catch (err) {
+  console.warn(`Failed to initialize sentiment trainer: ${err.message}`);
+  console.warn('Sentiment training will not be available');
+}
+
 // Lark Bot Service
 const { LarkBotService } = require('./services/larkBot');
 const larkBot = new LarkBotService();
@@ -469,6 +479,171 @@ app.post('/api/news/classify-sentiment', async (req, res) => {
   } catch (error) {
     console.error('[Sentiment] Classification error:', error);
     res.status(500).json({ detail: `Failed to classify sentiment: ${error.message}` });
+  }
+});
+
+// ==================== Sentiment Training ====================
+
+// 수동 라벨링
+app.post('/api/sentiment/label', (req, res) => {
+  if (!sentimentTrainer) {
+    return res.status(503).json({ detail: 'Sentiment trainer is not available' });
+  }
+
+  const { text, label, articleId } = req.body;
+
+  if (!text || typeof text !== 'string' || text.trim().length === 0) {
+    return res.status(400).json({ detail: 'text is required' });
+  }
+  if (!['positive', 'negative', 'neutral'].includes(label)) {
+    return res.status(400).json({ detail: 'label must be positive, negative, or neutral' });
+  }
+
+  try {
+    const entry = sentimentTrainer.addLabel(text.trim(), label, articleId || null);
+    res.json({ status: 'success', entry });
+  } catch (err) {
+    res.status(500).json({ detail: err.message });
+  }
+});
+
+// 일괄 수동 라벨링
+app.post('/api/sentiment/label-batch', (req, res) => {
+  if (!sentimentTrainer) {
+    return res.status(503).json({ detail: 'Sentiment trainer is not available' });
+  }
+
+  const { items } = req.body;
+  if (!Array.isArray(items) || items.length === 0) {
+    return res.status(400).json({ detail: 'items array is required' });
+  }
+
+  try {
+    const results = sentimentTrainer.addLabels(items);
+    res.json({ status: 'success', added: results.length, total: sentimentTrainer.labeledData.length });
+  } catch (err) {
+    res.status(500).json({ detail: err.message });
+  }
+});
+
+// HF 모델로 자동 라벨링
+app.post('/api/sentiment/auto-label', async (req, res) => {
+  if (!sentimentTrainer) {
+    return res.status(503).json({ detail: 'Sentiment trainer is not available' });
+  }
+
+  const { texts, addToTrainingData = true } = req.body;
+  if (!Array.isArray(texts) || texts.length === 0) {
+    return res.status(400).json({ detail: 'texts array is required' });
+  }
+  if (texts.length > 100) {
+    return res.status(400).json({ detail: 'Maximum 100 texts per request' });
+  }
+
+  try {
+    const results = await sentimentTrainer.autoLabel(texts, addToTrainingData);
+    res.json({
+      results,
+      total: results.length,
+      addedToTrainingData: addToTrainingData,
+    });
+  } catch (err) {
+    res.status(500).json({ detail: err.message });
+  }
+});
+
+// 분류기 학습
+app.post('/api/sentiment/train', async (req, res) => {
+  if (!sentimentTrainer) {
+    return res.status(503).json({ detail: 'Sentiment trainer is not available' });
+  }
+
+  const { modelType = 'logistic_regression', testSize = 0.2, epochs = 200, lr = 0.1 } = req.body;
+
+  try {
+    console.log('[Sentiment] Training classifier...');
+    const result = await sentimentTrainer.train({ modelType, testSize, epochs, lr });
+    console.log(`[Sentiment] Training complete. Accuracy: ${(result.accuracy * 100).toFixed(1)}%`);
+    res.json(result);
+  } catch (err) {
+    if (err.message.includes('최소')) {
+      return res.status(400).json({ detail: err.message });
+    }
+    res.status(500).json({ detail: err.message });
+  }
+});
+
+// 감성 예측
+app.post('/api/sentiment/predict', async (req, res) => {
+  if (!sentimentTrainer) {
+    return res.status(503).json({ detail: 'Sentiment trainer is not available' });
+  }
+
+  const { texts } = req.body;
+  if (!Array.isArray(texts) || texts.length === 0) {
+    return res.status(400).json({ detail: 'texts array is required' });
+  }
+  if (texts.length > 50) {
+    return res.status(400).json({ detail: 'Maximum 50 texts per request' });
+  }
+
+  try {
+    const predictions = await sentimentTrainer.predict(texts);
+    res.json({ predictions, total: predictions.length });
+  } catch (err) {
+    if (err.message.includes('학습된 모델')) {
+      return res.status(400).json({ detail: err.message });
+    }
+    res.status(500).json({ detail: err.message });
+  }
+});
+
+// 통계 조회
+app.get('/api/sentiment/stats', (req, res) => {
+  if (!sentimentTrainer) {
+    return res.status(503).json({ detail: 'Sentiment trainer is not available' });
+  }
+
+  try {
+    res.json(sentimentTrainer.getStats());
+  } catch (err) {
+    res.status(500).json({ detail: err.message });
+  }
+});
+
+// 라벨 데이터 조회
+app.get('/api/sentiment/labels', (req, res) => {
+  if (!sentimentTrainer) {
+    return res.status(503).json({ detail: 'Sentiment trainer is not available' });
+  }
+
+  const page = Math.max(parseInt(req.query.page, 10) || 1, 1);
+  const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 50, 1), 200);
+  const offset = (page - 1) * limit;
+
+  const data = sentimentTrainer.labeledData;
+  const items = data.slice(offset, offset + limit);
+
+  res.json({
+    items,
+    total: data.length,
+    page,
+    limit,
+    totalPages: Math.ceil(data.length / limit),
+  });
+});
+
+// 자동 라벨 데이터 삭제
+app.delete('/api/sentiment/auto-labels', (req, res) => {
+  if (!sentimentTrainer) {
+    return res.status(503).json({ detail: 'Sentiment trainer is not available' });
+  }
+
+  try {
+    const result = sentimentTrainer.clearAutoLabels();
+    res.json({ status: 'success', ...result });
+  } catch (err) {
+    res.status(500).json({ detail: err.message });
   }
 });
 
