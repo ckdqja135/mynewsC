@@ -447,11 +447,12 @@ app.post('/api/news/classify-sentiment', async (req, res) => {
   try {
     console.log(`[Sentiment] Classifying ${articles.length} articles for query: ${query}`);
 
-    // LLM 기반 감성 분류
+    // LLM 기반 감성 분류 (sentimentTrainer로 자동 라벨 수집)
     const classifiedArticles = await sentimentClassifier.classifyArticlesWithLLM(
       articles,
       llmService,
-      query
+      query,
+      sentimentTrainer
     );
 
     console.log(`[Sentiment] Classification completed`);
@@ -647,6 +648,261 @@ app.delete('/api/sentiment/auto-labels', (req, res) => {
   }
 });
 
+// ==================== Sentiment Pipeline Management ====================
+
+// 파이프라인 설정/상태 조회
+app.get('/api/sentiment/pipeline', (req, res) => {
+  if (!sentimentTrainer) {
+    return res.status(503).json({ detail: 'Sentiment trainer is not available' });
+  }
+
+  try {
+    res.json(sentimentTrainer.getPipelineConfig());
+  } catch (err) {
+    res.status(500).json({ detail: err.message });
+  }
+});
+
+// 파이프라인 설정 변경
+app.put('/api/sentiment/pipeline', (req, res) => {
+  if (!sentimentTrainer) {
+    return res.status(503).json({ detail: 'Sentiment trainer is not available' });
+  }
+
+  try {
+    const updated = sentimentTrainer.setPipelineConfig(req.body);
+    res.json({ status: 'success', config: updated });
+  } catch (err) {
+    res.status(500).json({ detail: err.message });
+  }
+});
+
+// 수동 재학습 트리거
+app.post('/api/sentiment/pipeline/retrain', async (req, res) => {
+  if (!sentimentTrainer) {
+    return res.status(503).json({ detail: 'Sentiment trainer is not available' });
+  }
+
+  try {
+    const { modelType = 'logistic_regression', testSize = 0.2, epochs = 200, lr = 0.1 } = req.body;
+    console.log('[Pipeline] Manual retrain triggered');
+    const result = await sentimentTrainer.train({ modelType, testSize, epochs, lr });
+    sentimentTrainer._newLlmLabelsSinceRetrain = 0;
+    console.log(`[Pipeline] Retrain complete. Accuracy: ${(result.accuracy * 100).toFixed(1)}%`);
+    res.json({ status: 'success', ...result });
+  } catch (err) {
+    if (err.message.includes('최소')) {
+      return res.status(400).json({ detail: err.message });
+    }
+    res.status(500).json({ detail: err.message });
+  }
+});
+
+// LLM 라벨 전체 삭제
+app.delete('/api/sentiment/llm-labels', (req, res) => {
+  if (!sentimentTrainer) {
+    return res.status(503).json({ detail: 'Sentiment trainer is not available' });
+  }
+
+  try {
+    const result = sentimentTrainer.clearLlmLabels();
+    res.json({ status: 'success', ...result });
+  } catch (err) {
+    res.status(500).json({ detail: err.message });
+  }
+});
+
+// 주기적 재학습 cron 설정
+app.post('/api/sentiment/pipeline/schedule', (req, res) => {
+  if (!sentimentTrainer) {
+    return res.status(503).json({ detail: 'Sentiment trainer is not available' });
+  }
+
+  const { enabled, schedule } = req.body;
+
+  if (enabled && !scheduler.validateCronExpression(schedule)) {
+    return res.status(400).json({ detail: 'Invalid cron expression' });
+  }
+
+  try {
+    const jobId = 'sentiment-auto-retrain';
+
+    if (enabled) {
+      const taskFunction = async () => {
+        console.log('[Pipeline Schedule] Running scheduled retrain');
+        try {
+          const result = await sentimentTrainer.train();
+          sentimentTrainer._newLlmLabelsSinceRetrain = 0;
+          console.log(`[Pipeline Schedule] Retrain complete. Accuracy: ${(result.accuracy * 100).toFixed(1)}%`);
+        } catch (err) {
+          console.error(`[Pipeline Schedule] Retrain failed: ${err.message}`);
+        }
+      };
+
+      const result = scheduler.addJob(jobId, schedule, { enabled, schedule }, taskFunction);
+      res.json({
+        status: 'success',
+        jobId: result.jobId,
+        nextRun: result.nextRun,
+        message: 'Sentiment retrain schedule enabled',
+      });
+    } else {
+      scheduler.removeJob(jobId);
+      res.json({
+        status: 'success',
+        message: 'Sentiment retrain schedule disabled',
+      });
+    }
+  } catch (err) {
+    res.status(500).json({ detail: err.message });
+  }
+});
+
+// 재학습 스케줄 상태 조회
+app.get('/api/sentiment/pipeline/schedule', (req, res) => {
+  if (!sentimentTrainer) {
+    return res.status(503).json({ detail: 'Sentiment trainer is not available' });
+  }
+
+  try {
+    const jobs = scheduler.listJobs();
+    const retrainJob = jobs.find(j => j.jobId === 'sentiment-auto-retrain');
+
+    if (retrainJob && retrainJob.active) {
+      res.json({
+        enabled: true,
+        ...retrainJob.config,
+        lastRun: retrainJob.lastRun,
+        nextRun: retrainJob.nextRun,
+      });
+    } else {
+      res.json({ enabled: false });
+    }
+  } catch (err) {
+    res.status(500).json({ detail: err.message });
+  }
+});
+
+// 시드 데이터 자동 수집 (다양한 키워드로 학습 데이터 구축)
+app.post('/api/sentiment/pipeline/seed', async (req, res) => {
+  if (!sentimentTrainer) {
+    return res.status(503).json({ detail: 'Sentiment trainer is not available' });
+  }
+  if (!llmService) {
+    return res.status(503).json({ detail: 'LLM service is not available' });
+  }
+  if (sentimentTrainer._seedStatus.running) {
+    return res.status(409).json({ detail: 'Seed already running', status: sentimentTrainer.getSeedStatus() });
+  }
+
+  const defaultKeywords = [
+    // 긍정 유도
+    '흥행 대박', '수상 쾌거', '신기록 달성', '호실적 성장', '인기 완판',
+    // 부정 유도
+    '리콜 결함', '사고 피해', '논란 비판', '해킹 유출', '적발 위반',
+    // 중립 유도
+    '정책 발표', '실적 발표', '인사 이동', '신제품 출시', '계획 추진',
+    // 대기업 (혼합)
+    '삼성전자', '현대차', '카카오', '네이버',
+  ];
+
+  const keywords = req.body.keywords || defaultKeywords;
+  const numPerKeyword = Math.min(Math.max(parseInt(req.body.num) || 20, 5), 50);
+
+  // 시드 상태 초기화
+  sentimentTrainer._seedStatus = {
+    running: true,
+    currentKeyword: '',
+    completedKeywords: 0,
+    totalKeywords: keywords.length,
+    labelsAdded: 0,
+    startedAt: new Date().toISOString(),
+    finishedAt: null,
+    error: null,
+  };
+
+  const labelsBefore = sentimentTrainer.labeledData.length;
+
+  // 즉시 응답 (백그라운드 실행)
+  res.json({
+    status: 'started',
+    totalKeywords: keywords.length,
+    numPerKeyword,
+    currentLabels: labelsBefore,
+    message: `${keywords.length}개 키워드로 시드 시작. GET /api/sentiment/pipeline/seed 로 진행 상태 확인`,
+  });
+
+  // 백그라운드 실행
+  (async () => {
+    for (let k = 0; k < keywords.length; k++) {
+      const keyword = keywords[k];
+      sentimentTrainer._seedStatus.currentKeyword = keyword;
+
+      try {
+        console.log(`[Seed] (${k + 1}/${keywords.length}) Searching: "${keyword}"`);
+
+        // 뉴스 검색
+        const allArticles = await fetchFromAllSources(keyword, 'ko', 'kr', numPerKeyword, [], 50);
+        const uniqueArticles = deduplicateAndFilter(allArticles, []);
+
+        if (uniqueArticles.length === 0) {
+          console.log(`[Seed] No articles found for "${keyword}", skipping`);
+          sentimentTrainer._seedStatus.completedKeywords = k + 1;
+          continue;
+        }
+
+        const articlesToClassify = uniqueArticles.slice(0, numPerKeyword);
+
+        // LLM 감성 분류 (sentimentTrainer 자동 수집 포함)
+        console.log(`[Seed] Classifying ${articlesToClassify.length} articles for "${keyword}"`);
+        await sentimentClassifier.classifyArticlesWithLLM(
+          articlesToClassify, llmService, keyword, sentimentTrainer
+        );
+
+        sentimentTrainer._seedStatus.completedKeywords = k + 1;
+        sentimentTrainer._seedStatus.labelsAdded = sentimentTrainer.labeledData.length - labelsBefore;
+
+        console.log(`[Seed] (${k + 1}/${keywords.length}) Done. Labels added so far: ${sentimentTrainer._seedStatus.labelsAdded}`);
+
+        // 키워드 간 딜레이 (rate limit 방지)
+        if (k < keywords.length - 1) {
+          await new Promise(r => setTimeout(r, 2000));
+        }
+      } catch (err) {
+        console.error(`[Seed] Error for "${keyword}": ${err.message}`);
+      }
+    }
+
+    // 완료
+    sentimentTrainer._seedStatus.running = false;
+    sentimentTrainer._seedStatus.currentKeyword = '';
+    sentimentTrainer._seedStatus.finishedAt = new Date().toISOString();
+    sentimentTrainer._seedStatus.labelsAdded = sentimentTrainer.labeledData.length - labelsBefore;
+
+    console.log(`[Seed] Completed. Total labels: ${sentimentTrainer.labeledData.length}, added: ${sentimentTrainer._seedStatus.labelsAdded}`);
+
+    // 시드 완료 후 재학습
+    if (sentimentTrainer.labeledData.length >= sentimentTrainer._pipelineConfig.minLabelsForTraining) {
+      console.log('[Seed] Triggering retrain after seed...');
+      try {
+        const result = await sentimentTrainer.train();
+        sentimentTrainer._newLlmLabelsSinceRetrain = 0;
+        console.log(`[Seed] Retrain complete. Accuracy: ${(result.accuracy * 100).toFixed(1)}%`);
+      } catch (err) {
+        console.error(`[Seed] Retrain failed: ${err.message}`);
+      }
+    }
+  })();
+});
+
+// 시드 진행 상태 조회
+app.get('/api/sentiment/pipeline/seed', (req, res) => {
+  if (!sentimentTrainer) {
+    return res.status(503).json({ detail: 'Sentiment trainer is not available' });
+  }
+  res.json(sentimentTrainer.getSeedStatus());
+});
+
 // ==================== Lark Bot Endpoints ====================
 
 // 1. 수동 Lark 전송
@@ -680,8 +936,8 @@ app.post('/api/lark/send-manual', async (req, res) => {
     const analysis = await llmService.analyzeComprehensive(query, uniqueArticles.slice(0, 20));
     console.log(`[Lark] Analysis completed`);
 
-    // 감성 분류 (LLM 기반 개별 기사 분석)
-    const classifiedArticles = await sentimentClassifier.classifyArticlesWithLLM(uniqueArticles, llmService, query);
+    // 감성 분류 (LLM 기반 개별 기사 분석 + 자동 라벨 수집)
+    const classifiedArticles = await sentimentClassifier.classifyArticlesWithLLM(uniqueArticles, llmService, query, sentimentTrainer);
     console.log(`[Lark] Articles classified by sentiment (LLM-based)`);
 
     // 필터링
@@ -752,8 +1008,8 @@ app.post('/api/lark/schedule-config', async (req, res) => {
           // AI 분석
           const analysis = await llmService.analyzeComprehensive(config.query, uniqueArticles.slice(0, 20));
 
-          // 감성 분류 (LLM 기반 개별 기사 분석)
-          const classifiedArticles = await sentimentClassifier.classifyArticlesWithLLM(uniqueArticles, llmService, config.query);
+          // 감성 분류 (LLM 기반 개별 기사 분석 + 자동 라벨 수집)
+          const classifiedArticles = await sentimentClassifier.classifyArticlesWithLLM(uniqueArticles, llmService, config.query, sentimentTrainer);
 
           // 필터링
           const filteredArticles = sentimentClassifier.filterBySentiment(

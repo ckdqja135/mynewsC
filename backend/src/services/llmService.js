@@ -300,79 +300,103 @@ Focus on factual, actionable information. Respond ONLY with valid JSON.`;
   }
 
   /**
-   * 개별 기사의 감성 분석 (검색어 기준)
-   * @param {string} title - 기사 제목
+   * 여러 제목을 한 번의 LLM 호출로 감성 분류 (배치 프롬프트)
+   * @param {string[]} titles - 기사 제목 배열
    * @param {string} query - 검색 키워드
-   * @returns {Promise<string>} 'positive', 'negative', 또는 'neutral'
+   * @returns {Promise<string[]>} 감성 배열 ('positive'|'negative'|'neutral')
    */
-  async classifyArticleSentiment(title, query) {
-    const prompt = `기사 제목: "${title}"
-검색 키워드: "${query}"
+  async classifyTitlesBatch(titles, query) {
+    const titlesText = titles.map((t, i) => `${i + 1}. "${t}"`).join('\n');
 
-이 기사가 "${query}" 자체에 대해 어떤 감성을 나타내는지 분류하세요.
+    const prompt = `검색 키워드: "${query}"
+
+다음 기사 제목들이 "${query}" 자체에 대해 긍정/부정/중립 중 어떤 감성인지 분류하세요.
 
 **중요**: 회사의 주가, 재무, 실적 문제는 제품/콘텐츠 자체의 문제가 아닙니다.
-- 예시: "티니핑" 검색 시 → "SAMG엔터 주가 하락" = neutral (회사 문제 ≠ 티니핑 문제)
-- 예시: "티니핑" 검색 시 → "티니핑 흥행" = positive (티니핑 자체의 성공)
-- 예시: "티니핑" 검색 시 → "티니핑 논란" = negative (티니핑 자체의 문제)
+- positive: ${query} 자체에 대한 좋은 소식, 성과, 흥행, 인기, 수상
+- negative: ${query} 자체에 대한 문제, 비판, 논란, 사고, 실패
+- neutral: 단순 사실 전달, 회사/인물의 재무/주가 문제, 일반 보도
 
-**positive (긍정)**: ${query} 자체에 대한 좋은 소식이나 성과
- 예시: 호재, 급등, 급동, 흥행, 대박, 호실적, 호평, 성공, 성장, 인기, 완판, 매진, 수상, 1위
+기사 목록:
+${titlesText}
 
-**negative (부정)**: ${query} 자체에 대한 문제나 비판
- 예시: 논란, 비판, 실패, 사고, 문제, 리콜, 적발, 표절, 하자, 오류
+각 줄에 번호와 positive/negative/neutral만 출력하세요:`;
 
-**neutral (중립)**: 단순 사실 전달이거나, ${query}와 관련된 회사/인물의 재무/주가 문제
+    const MAX_RETRIES = 3;
+    for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
+      try {
+        const response = await this.client.chat.completions.create({
+          model: this.model,
+          messages: [
+            { role: 'system', content: 'You are a sentiment classifier. For each numbered article, respond with the number and one word: positive, negative, or neutral. One per line.' },
+            { role: 'user', content: prompt },
+          ],
+          temperature: 0.1,
+          max_tokens: titles.length * 15,
+        });
 
-응답은 반드시 positive, negative, neutral 중 정확히 하나만 출력하세요.`;
+        const text = response.choices[0].message.content.trim().toLowerCase();
+        const results = titles.map(() => 'neutral');
 
-    try {
-      const response = await this.client.chat.completions.create({
-        model: this.model,
-        messages: [
-          { role: 'system', content: 'You are a sentiment analysis expert. Respond with only one word: positive, negative, or neutral.' },
-          { role: 'user', content: prompt },
-        ],
-        temperature: 0.1,
-        max_tokens: 10,
-      });
+        for (const line of text.split('\n')) {
+          const match = line.match(/(\d+)\D*(positive|negative|neutral)/);
+          if (match) {
+            const idx = parseInt(match[1]) - 1;
+            if (idx >= 0 && idx < titles.length) {
+              results[idx] = match[2];
+            }
+          }
+        }
 
-      const result = response.choices[0].message.content.trim().toLowerCase();
-
-      // 결과 검증
-      if (result.includes('positive')) return 'positive';
-      if (result.includes('negative')) return 'negative';
-      if (result.includes('neutral')) return 'neutral';
-
-      // 기본값
-      return 'neutral';
-    } catch (error) {
-      console.error(`[LLM] Sentiment analysis failed: ${error.message}`);
-      return 'neutral';
+        return results;
+      } catch (error) {
+        if (error.message && error.message.includes('429') && attempt < MAX_RETRIES - 1) {
+          const delay = 1000 * (attempt + 1);
+          console.warn(`[LLM] Rate limited, retrying in ${delay}ms (attempt ${attempt + 1}/${MAX_RETRIES})`);
+          await new Promise(r => setTimeout(r, delay));
+          continue;
+        }
+        console.error(`[LLM] Batch sentiment failed: ${error.message}`);
+        return titles.map(() => 'neutral');
+      }
     }
+    return titles.map(() => 'neutral');
   }
 
   /**
-   * 여러 기사의 감성 분석 (병렬 처리)
-   * @param {Array} articles - 기사 배열
+   * 여러 기사의 감성 분석 (배치 프롬프트, 상위 N개만 LLM)
+   * @param {Array} articles - 기사 배열 (similarity_score 내림차순 권장)
    * @param {string} query - 검색 키워드
    * @returns {Promise<Array>} 감성이 태그된 기사 배열
    */
   async analyzeSentimentBatch(articles, query) {
-    console.log(`[LLM] Analyzing sentiment for ${articles.length} articles...`);
+    const LLM_CLASSIFY_LIMIT = 30;
+    const BATCH_SIZE = 10;
 
-    // 병렬 처리로 성능 향상
-    const sentimentPromises = articles.map(async (article) => {
-      const sentiment = await this.classifyArticleSentiment(article.title, query);
-      return {
-        ...article,
-        sentiment,
-      };
-    });
+    const toClassify = articles.slice(0, LLM_CLASSIFY_LIMIT);
+    const rest = articles.slice(LLM_CLASSIFY_LIMIT);
 
-    const results = await Promise.all(sentimentPromises);
+    console.log(`[LLM] Analyzing sentiment: ${toClassify.length} via LLM (${Math.ceil(toClassify.length / BATCH_SIZE)} API calls), ${rest.length} as neutral`);
+
+    const classifiedResults = [];
+
+    for (let i = 0; i < toClassify.length; i += BATCH_SIZE) {
+      const batch = toClassify.slice(i, i + BATCH_SIZE);
+      const titles = batch.map(a => a.title);
+
+      const sentiments = await this.classifyTitlesBatch(titles, query);
+
+      batch.forEach((article, j) => {
+        classifiedResults.push({ ...article, sentiment: sentiments[j] });
+      });
+
+      console.log(`[LLM] Batch ${Math.floor(i / BATCH_SIZE) + 1}/${Math.ceil(toClassify.length / BATCH_SIZE)} done (${classifiedResults.length}/${toClassify.length})`);
+    }
+
+    const neutralResults = rest.map(article => ({ ...article, sentiment: 'neutral' }));
+
     console.log(`[LLM] Sentiment analysis completed`);
-    return results;
+    return [...classifiedResults, ...neutralResults];
   }
 }
 

@@ -133,6 +133,29 @@ class SentimentTrainer {
     this._pipeline = null;
     this._pipelineLoading = null;
 
+    // LLM 교사 모델 파이프라인 설정
+    this._pipelineConfig = {
+      enabled: true,
+      autoRetrainEnabled: true,
+      retrainThreshold: 50,
+      minLabelsForTraining: 10,
+    };
+    this._newLlmLabelsSinceRetrain = 0;
+    this._retrainInProgress = false;
+    this._lastAutoRetrainResult = null;
+
+    // 시드 작업 진행 상태
+    this._seedStatus = {
+      running: false,
+      currentKeyword: '',
+      completedKeywords: 0,
+      totalKeywords: 0,
+      labelsAdded: 0,
+      startedAt: null,
+      finishedAt: null,
+      error: null,
+    };
+
     // HF Inference API
     this.hfApiUrl = 'https://api-inference.huggingface.co/models/alsgyu/sentiment-analysis-fine-tuned-model';
 
@@ -288,6 +311,153 @@ class SentimentTrainer {
       results.push(this.addLabel(text, label, articleId));
     }
     return results;
+  }
+
+  /**
+   * LLM 분류 결과를 학습 데이터로 자동 수집
+   * @param {Array} classifiedArticles - sentiment 필드가 있는 기사 배열
+   * @param {string} query - 검색 키워드
+   * @returns {{ added: number, skipped: number, total: number }}
+   */
+  addLlmLabels(classifiedArticles, query = '') {
+    if (!this._pipelineConfig.enabled) {
+      return { added: 0, skipped: 0, total: this.labeledData.length };
+    }
+
+    if (!Array.isArray(classifiedArticles) || classifiedArticles.length === 0) {
+      return { added: 0, skipped: 0, total: this.labeledData.length };
+    }
+
+    // 기존 텍스트 Set으로 O(1) 중복 체크
+    const existingTexts = new Set(this.labeledData.map(d => d.text));
+
+    let added = 0;
+    let skipped = 0;
+
+    for (const article of classifiedArticles) {
+      const sentiment = article.sentiment;
+      if (!sentiment || !['positive', 'negative', 'neutral'].includes(sentiment)) {
+        skipped++;
+        continue;
+      }
+
+      const text = (article.title || '').trim();
+      if (!text) {
+        skipped++;
+        continue;
+      }
+
+      // 중복 제거 (제목 기준)
+      if (existingTexts.has(text)) {
+        skipped++;
+        continue;
+      }
+
+      this.labeledData.push({
+        text,
+        label: sentiment,
+        articleId: article.id || null,
+        source: 'llm',
+        confidence: 1.0,
+        query: query || null,
+        createdAt: new Date().toISOString(),
+      });
+
+      existingTexts.add(text);
+      added++;
+    }
+
+    if (added > 0) {
+      this._saveLabeledData();
+      this._newLlmLabelsSinceRetrain += added;
+      console.log(`[SentimentTrainer] LLM labels added: ${added}, skipped: ${skipped}, total: ${this.labeledData.length}, sinceRetrain: ${this._newLlmLabelsSinceRetrain}`);
+      this._maybeAutoRetrain();
+    }
+
+    return { added, skipped, total: this.labeledData.length };
+  }
+
+  /**
+   * 자동 재학습 조건 확인 및 실행 (fire-and-forget)
+   */
+  _maybeAutoRetrain() {
+    if (!this._pipelineConfig.enabled || !this._pipelineConfig.autoRetrainEnabled) return;
+    if (this._retrainInProgress) return;
+    if (this._newLlmLabelsSinceRetrain < this._pipelineConfig.retrainThreshold) return;
+    if (this.labeledData.length < this._pipelineConfig.minLabelsForTraining) return;
+
+    console.log(`[SentimentTrainer] Auto-retrain triggered (${this._newLlmLabelsSinceRetrain} new labels since last retrain)`);
+    this._retrainInProgress = true;
+
+    this.train()
+      .then(result => {
+        this._lastAutoRetrainResult = {
+          success: true,
+          accuracy: result.accuracy,
+          sampleCount: result.sampleCount,
+          triggeredAt: new Date().toISOString(),
+        };
+        this._newLlmLabelsSinceRetrain = 0;
+        console.log(`[SentimentTrainer] Auto-retrain complete. Accuracy: ${(result.accuracy * 100).toFixed(1)}%`);
+      })
+      .catch(err => {
+        this._lastAutoRetrainResult = {
+          success: false,
+          error: err.message,
+          triggeredAt: new Date().toISOString(),
+        };
+        console.error(`[SentimentTrainer] Auto-retrain failed: ${err.message}`);
+      })
+      .finally(() => {
+        this._retrainInProgress = false;
+      });
+  }
+
+  /**
+   * 파이프라인 설정 조회
+   */
+  getPipelineConfig() {
+    return {
+      ...this._pipelineConfig,
+      newLlmLabelsSinceRetrain: this._newLlmLabelsSinceRetrain,
+      retrainInProgress: this._retrainInProgress,
+      lastAutoRetrainResult: this._lastAutoRetrainResult,
+    };
+  }
+
+  /**
+   * 파이프라인 설정 변경
+   */
+  setPipelineConfig(config) {
+    if (config.enabled !== undefined) this._pipelineConfig.enabled = !!config.enabled;
+    if (config.autoRetrainEnabled !== undefined) this._pipelineConfig.autoRetrainEnabled = !!config.autoRetrainEnabled;
+    if (config.retrainThreshold !== undefined) {
+      const val = parseInt(config.retrainThreshold, 10);
+      if (val >= 1) this._pipelineConfig.retrainThreshold = val;
+    }
+    if (config.minLabelsForTraining !== undefined) {
+      const val = parseInt(config.minLabelsForTraining, 10);
+      if (val >= 1) this._pipelineConfig.minLabelsForTraining = val;
+    }
+    return this.getPipelineConfig();
+  }
+
+  /**
+   * LLM 소스 라벨 데이터 전체 삭제
+   */
+  clearLlmLabels() {
+    const before = this.labeledData.length;
+    this.labeledData = this.labeledData.filter(d => d.source !== 'llm');
+    this._saveLabeledData();
+    this._newLlmLabelsSinceRetrain = 0;
+    return { removed: before - this.labeledData.length, remaining: this.labeledData.length };
+  }
+
+  /**
+   * 시드 진행 상태 조회
+   */
+  getSeedStatus() {
+    return { ...this._seedStatus };
   }
 
   /**
@@ -643,6 +813,11 @@ class SentimentTrainer {
       lastTrainedAt: this.modelMetadata?.trainedAt || null,
       embeddingDim: this.modelMetadata?.embeddingDim || null,
       classes: this.classes,
+      pipelineEnabled: this._pipelineConfig.enabled,
+      autoRetrainEnabled: this._pipelineConfig.autoRetrainEnabled,
+      retrainThreshold: this._pipelineConfig.retrainThreshold,
+      newLlmLabelsSinceRetrain: this._newLlmLabelsSinceRetrain,
+      retrainInProgress: this._retrainInProgress,
     };
   }
 

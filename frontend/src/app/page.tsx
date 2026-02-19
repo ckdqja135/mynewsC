@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { NewsApiService } from '@/services/newsApi';
 import type { NewsArticle, NewsArticleWithScore, SearchMode, NewsAnalysisResponse, SentimentType, LarkConfig } from '@/types/news';
 import styles from './page.module.css';
@@ -141,6 +141,11 @@ export default function Home() {
   const [analysisLoading, setAnalysisLoading] = useState<boolean>(false);
   const [analysisError, setAnalysisError] = useState<string>('');
   const [showAnalysisPanel, setShowAnalysisPanel] = useState<boolean>(true);
+  const [analysisStep, setAnalysisStep] = useState<string>('');
+  const [progressPercent, setProgressPercent] = useState<number>(0);
+  const analysisInProgress = useRef(false);
+  // 분류 완료된 전체 기사 (감성 필터 변경 시 재분류 없이 재분석용)
+  const classifiedArticlesRef = useRef<any[]>([]);
 
   // 감성 필터 상태 (AI 검색용)
   const [sentimentFilter, setSentimentFilter] = useState<Set<SentimentType>>(
@@ -487,48 +492,56 @@ export default function Home() {
     });
   };
 
-  const performAnalysis = async (searchQuery: string) => {
+  const performAnalysis = async (searchQuery: string, inputArticles?: any[]) => {
+    // 중복 호출 방지
+    if (analysisInProgress.current) {
+      console.log('[AI] Analysis already in progress, skipping');
+      return;
+    }
+    analysisInProgress.current = true;
+
     setAnalysisLoading(true);
     setAnalysisError('');
-    setMobileTab('results'); // 분석 시작 시 결과 탭으로
+    setProgressPercent(5);
+    setAnalysisStep('감성 분류 준비 중...');
+
+    // state 대신 직접 전달받은 articles 사용 (React state 비동기 문제 방지)
+    const targetArticles = inputArticles || articles;
 
     try {
       // 1단계: 먼저 모든 기사에 대해 LLM 기반 감성 분류 수행
-      let classifiedArticles = articles;
-      let filteredArticlesForAnalysis = articles;
+      let classifiedArticles = targetArticles;
+      let filteredArticlesForAnalysis = targetArticles;
 
-      if (articles.length > 0) {
+      if (targetArticles.length > 0) {
         try {
-          console.log('[AI] Step 1: Classifying sentiment with LLM for', articles.length, 'articles...');
-          console.log('[AI] Selected sentiment types:', Array.from(sentimentFilter));
+          setProgressPercent(10);
+          setAnalysisStep(`감성 분류 중... (${targetArticles.length}개 기사)`);
 
-          // 모든 기사를 분류 (필터링 없이)
           const classificationResult = await NewsApiService.classifySentiment(
-            articles,
+            targetArticles,
             searchQuery,
-            ['positive', 'negative', 'neutral'] // 전체 분류 (필터링은 나중에)
+            ['positive', 'negative', 'neutral']
           );
 
           classifiedArticles = classificationResult.articles;
-          console.log('[AI] Classification completed:', classificationResult.allStatistics);
+          classifiedArticlesRef.current = classifiedArticles;
+          setProgressPercent(60);
 
-          // 선택된 감성 타입으로 필터링
           filteredArticlesForAnalysis = classifiedArticles.filter((article: any) =>
             sentimentFilter.has(article.sentiment)
           );
 
-          console.log('[AI] Filtered for analysis:', filteredArticlesForAnalysis.length, 'articles');
-          console.log('[AI] Sentiment filter:', Array.from(sentimentFilter));
-
         } catch (classifyError) {
           console.error('[AI] LLM sentiment classification failed:', classifyError);
-          // 실패 시 전체 기사로 진행
-          filteredArticlesForAnalysis = articles;
+          filteredArticlesForAnalysis = targetArticles;
+          setProgressPercent(60);
         }
       }
 
       // 2단계: 필터링된 기사만 LLM으로 분석
-      console.log('[AI] Step 2: Analyzing', filteredArticlesForAnalysis.length, 'filtered articles...');
+      setProgressPercent(65);
+      setAnalysisStep(`AI 분석 중... (${filteredArticlesForAnalysis.length}개 기사)`);
 
       const response = await NewsApiService.analyzeNews({
         q: searchQuery,
@@ -538,27 +551,17 @@ export default function Home() {
         analysis_type: 'comprehensive',
         days_back: 30,
         excluded_sources: Array.from(excludedSources),
-        articles: filteredArticlesForAnalysis, // 필터링된 기사만 전달
+        articles: filteredArticlesForAnalysis,
       });
 
+      setProgressPercent(100);
       setAnalysisData(response);
       setShowAnalysisPanel(true);
+      setArticles(classifiedArticles);
 
-      // 3단계: 분류된 기사를 화면에 업데이트 (감성 필터 적용)
-      const displayArticles = classifiedArticles.filter((article: any) =>
-        sentimentFilter.has(article.sentiment)
-      );
-      setArticles(displayArticles);
-
-      console.log('[AI] Analysis completed. Displaying', displayArticles.length, 'articles');
-
-      // 시맨틱 검색 캐시에 분석 결과 업데이트
       setSemanticSearchCache(prev => {
         if (prev && prev.query === searchQuery) {
-          return {
-            ...prev,
-            analysisData: response,
-          };
+          return { ...prev, analysisData: response };
         }
         return prev;
       });
@@ -567,6 +570,67 @@ export default function Home() {
       setAnalysisData(null);
     } finally {
       setAnalysisLoading(false);
+      setAnalysisStep('');
+      setProgressPercent(0);
+      analysisInProgress.current = false;
+    }
+  };
+
+  // 감성 필터 변경 시 분석만 재실행 (분류는 이미 완료된 상태)
+  const reAnalyzeWithFilter = async (newFilter: Set<SentimentType>) => {
+    const classified = classifiedArticlesRef.current;
+    if (!classified.length || !lastSearchQuery || analysisInProgress.current) return;
+
+    analysisInProgress.current = true;
+    setAnalysisLoading(true);
+    setProgressPercent(10);
+    setAnalysisStep('필터 변경 중...');
+
+    try {
+      const filtered = classified.filter((article: any) =>
+        newFilter.has(article.sentiment)
+      );
+
+      setProgressPercent(30);
+      setAnalysisStep(`AI 재분석 중... (${filtered.length}개 기사)`);
+
+      const response = await NewsApiService.analyzeNews({
+        q: lastSearchQuery,
+        hl: 'ko',
+        gl: 'kr',
+        num: 100,
+        analysis_type: 'comprehensive',
+        days_back: 30,
+        excluded_sources: Array.from(excludedSources),
+        articles: filtered,
+      });
+
+      setProgressPercent(100);
+      setAnalysisData(response);
+      setShowAnalysisPanel(true);
+    } catch (err) {
+      setAnalysisError(err instanceof Error ? err.message : '재분석에 실패했습니다');
+    } finally {
+      setAnalysisLoading(false);
+      setAnalysisStep('');
+      setProgressPercent(0);
+      analysisInProgress.current = false;
+    }
+  };
+
+  // 감성 필터 변경 핸들러
+  const handleSentimentFilterChange = (type: SentimentType, checked: boolean) => {
+    const newFilter = new Set(sentimentFilter);
+    if (checked) {
+      newFilter.add(type);
+    } else {
+      newFilter.delete(type);
+    }
+    setSentimentFilter(newFilter);
+
+    // 분류된 기사가 있으면 재분석
+    if (classifiedArticlesRef.current.length > 0 && newFilter.size > 0) {
+      reAnalyzeWithFilter(newFilter);
     }
   };
 
@@ -688,15 +752,10 @@ export default function Home() {
         });
       }
 
-      // 감성 필터가 부분적으로만 선택된 경우 (전체 선택이 아닌 경우)
-      // 자동으로 AI 분석 + 감성 분류 실행
-      const allSentimentsSelected = sentimentFilter.size === 3; // positive, negative, neutral 모두 선택
-      const noSentimentSelected = sentimentFilter.size === 0;
-
-      if (!allSentimentsSelected && !noSentimentSelected && responseArticles.length > 0) {
-        console.log('[Search] Sentiment filter detected, automatically running analysis...');
-        // 검색 완료 후 자동으로 분석 실행 (async로 실행하여 검색 완료를 차단하지 않음)
-        performAnalysis(searchQuery);
+      // 시맨틱 검색 시 항상 AI 분석 + 감성 분류 실행
+      if (mode === 'semantic' && responseArticles.length > 0) {
+        console.log('[Search] Semantic search completed, automatically running analysis...');
+        performAnalysis(searchQuery, responseArticles);
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : '뉴스를 불러오는데 실패했습니다');
@@ -735,11 +794,12 @@ export default function Home() {
       result = result.filter(article => bookmarkedArticles.has(article.id));
     }
 
-    // 감성 필터링 (AI 검색 시)
-    if (searchMode === 'semantic' && analysisData) {
+    // 감성 필터링 (AI 검색 시, 기사에 sentiment 필드가 있을 때)
+    if (searchMode === 'semantic' && sentimentFilter.size < 3) {
       result = result.filter(article => {
         const articleWithSentiment = article as any;
-        return articleWithSentiment.sentiment && sentimentFilter.has(articleWithSentiment.sentiment);
+        if (!articleWithSentiment.sentiment) return true; // 분류 안 된 기사는 통과
+        return sentimentFilter.has(articleWithSentiment.sentiment);
       });
     }
 
@@ -789,7 +849,7 @@ export default function Home() {
     });
 
     return result;
-  }, [articles, selectedSource, sortOrder, searchMode, showBookmarksOnly, bookmarkedArticles, dateFilter, customStartDate, customEndDate]);
+  }, [articles, selectedSource, sortOrder, searchMode, showBookmarksOnly, bookmarkedArticles, dateFilter, customStartDate, customEndDate, sentimentFilter]);
 
   // For list view: infinite scroll
   const infiniteScrollArticles = useMemo(() => {
@@ -1033,15 +1093,7 @@ export default function Home() {
                 <input
                   type="checkbox"
                   checked={sentimentFilter.has('positive')}
-                  onChange={(e) => {
-                    const newFilter = new Set(sentimentFilter);
-                    if (e.target.checked) {
-                      newFilter.add('positive');
-                    } else {
-                      newFilter.delete('positive');
-                    }
-                    setSentimentFilter(newFilter);
-                  }}
+                  onChange={(e) => handleSentimentFilterChange('positive', e.target.checked)}
                 />
                 <span className={styles.sentimentText}>긍정</span>
               </label>
@@ -1049,15 +1101,7 @@ export default function Home() {
                 <input
                   type="checkbox"
                   checked={sentimentFilter.has('negative')}
-                  onChange={(e) => {
-                    const newFilter = new Set(sentimentFilter);
-                    if (e.target.checked) {
-                      newFilter.add('negative');
-                    } else {
-                      newFilter.delete('negative');
-                    }
-                    setSentimentFilter(newFilter);
-                  }}
+                  onChange={(e) => handleSentimentFilterChange('negative', e.target.checked)}
                 />
                 <span className={styles.sentimentText}>부정</span>
               </label>
@@ -1065,15 +1109,7 @@ export default function Home() {
                 <input
                   type="checkbox"
                   checked={sentimentFilter.has('neutral')}
-                  onChange={(e) => {
-                    const newFilter = new Set(sentimentFilter);
-                    if (e.target.checked) {
-                      newFilter.add('neutral');
-                    } else {
-                      newFilter.delete('neutral');
-                    }
-                    setSentimentFilter(newFilter);
-                  }}
+                  onChange={(e) => handleSentimentFilterChange('neutral', e.target.checked)}
                 />
                 <span className={styles.sentimentText}>중립</span>
               </label>
@@ -1081,14 +1117,23 @@ export default function Home() {
           )}
         </form>
 
-        {/* 검색 중 로딩 표시 */}
-        {loading && (
+        {/* 검색/분석 중 로딩 표시 */}
+        {(loading || analysisLoading) && (
           <div className={styles.loadingOverlay}>
             <div className={styles.loadingSpinner}>
               <div className={styles.spinner}></div>
-              <p className={styles.loadingText}>검색 중입니다...</p>
+              <p className={styles.loadingText}>
+                {loading ? '검색 중입니다...' : analysisStep || 'AI 분석 중...'}
+              </p>
               <div className={styles.progressBar}>
-                <div className={styles.progressFill}></div>
+                {analysisLoading && progressPercent > 0 ? (
+                  <div
+                    className={styles.progressFillReal}
+                    style={{ width: `${progressPercent}%` }}
+                  ></div>
+                ) : (
+                  <div className={styles.progressFill}></div>
+                )}
               </div>
             </div>
           </div>

@@ -292,7 +292,7 @@ class ArticleSentimentClassifier {
    * @param {string} query - 검색 키워드
    * @returns {Promise<Array>} 감성 태그가 추가된 기사 배열
    */
-  async classifyArticlesWithLLM(articles, llmService, query) {
+  async classifyArticlesWithLLM(articles, llmService, query, sentimentTrainer = null) {
     if (!Array.isArray(articles)) {
       console.warn('[ArticleSentimentClassifier] Invalid articles array');
       return [];
@@ -305,12 +305,24 @@ class ArticleSentimentClassifier {
       const classifiedArticles = await llmService.analyzeSentimentBatch(articles, query);
 
       // 추가 메타데이터 포함
-      return classifiedArticles.map(article => ({
+      const result = classifiedArticles.map(article => ({
         ...article,
         sentimentScore: 100, // LLM 분류는 높은 신뢰도
         matchedKeywords: [],
         classificationMethod: 'llm'
       }));
+
+      // LLM 분류 결과를 학습 데이터로 자동 수집
+      if (sentimentTrainer) {
+        try {
+          const labelResult = sentimentTrainer.addLlmLabels(result, query);
+          console.log(`[ArticleSentimentClassifier] Auto-collected LLM labels: added=${labelResult.added}, skipped=${labelResult.skipped}`);
+        } catch (labelError) {
+          console.warn(`[ArticleSentimentClassifier] Failed to collect LLM labels (non-blocking): ${labelError.message}`);
+        }
+      }
+
+      return result;
     } catch (error) {
       console.error('[ArticleSentimentClassifier] LLM classification failed:', error.message);
       // 실패 시 모두 중립으로 처리

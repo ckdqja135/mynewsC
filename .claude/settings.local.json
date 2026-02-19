@@ -12,7 +12,9 @@
       "WebFetch(domain:serpapi.com)",
       "Bash(node -e:*)",
       "Bash(node:*)",
-      "Bash(npm install:*)"
+      "Bash(npm install:*)",
+      "Bash(npx next lint:*)",
+      "Bash(npx tsc:*)"
     ]
   }
 }

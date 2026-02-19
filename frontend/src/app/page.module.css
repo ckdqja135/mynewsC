@@ -632,6 +632,14 @@
   box-shadow: 0 0 12px var(--glow);
 }
 
+.progressFillReal {
+  height: 100%;
+  background: var(--accent-gradient);
+  border-radius: 4px;
+  box-shadow: 0 0 12px var(--glow);
+  transition: width 0.5s ease-out;
+}
+
 @keyframes progressAnimation {
   0% {
     width: 0%;
