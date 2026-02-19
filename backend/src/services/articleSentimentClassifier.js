@@ -293,7 +293,7 @@ class ArticleSentimentClassifier {
    * @param {Object} sentimentTrainer - 학습 파이프라인 인스턴스
    * @returns {Promise<Array>} 감성 태그가 추가된 기사 배열
    */
-  async classifyArticlesWithLLM(articles, llmService, query, sentimentTrainer = null) {
+  async classifyArticlesWithLLM(articles, llmService, query, sentimentTrainer = null, { forceLLM = false } = {}) {
     if (!Array.isArray(articles)) {
       console.warn('[ArticleSentimentClassifier] Invalid articles array');
       return [];
@@ -301,8 +301,9 @@ class ArticleSentimentClassifier {
 
     const LOCAL_MODEL_MIN_ACCURACY = 0.80;
 
-    // 로컬 모델 사용 가능 여부 확인
-    const canUseLocal = sentimentTrainer
+    // 로컬 모델 사용 가능 여부 확인 (forceLLM이면 무시)
+    const canUseLocal = !forceLLM
+      && sentimentTrainer
       && sentimentTrainer.classifier
       && sentimentTrainer.modelMetadata
       && sentimentTrainer.modelMetadata.accuracy >= LOCAL_MODEL_MIN_ACCURACY;

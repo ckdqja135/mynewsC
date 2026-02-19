@@ -856,7 +856,7 @@ app.post('/api/sentiment/pipeline/seed', async (req, res) => {
         // LLM 감성 분류 (sentimentTrainer 자동 수집 포함)
         console.log(`[Seed] Classifying ${articlesToClassify.length} articles for "${keyword}"`);
         await sentimentClassifier.classifyArticlesWithLLM(
-          articlesToClassify, llmService, keyword, sentimentTrainer
+          articlesToClassify, llmService, keyword, sentimentTrainer, { forceLLM: true }
         );
 
         sentimentTrainer._seedStatus.completedKeywords = k + 1;
