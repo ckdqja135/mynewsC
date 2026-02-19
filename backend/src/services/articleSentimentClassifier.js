@@ -286,10 +286,11 @@ class ArticleSentimentClassifier {
   }
 
   /**
-   * LLM을 사용하여 모든 기사의 감성 분석 (더 정확한 방식)
+   * 기사 감성 분류 (로컬 모델 우선, 부족하면 LLM 폴백)
    * @param {Array} articles - 기사 배열
    * @param {Object} llmService - LLM 서비스 인스턴스
    * @param {string} query - 검색 키워드
+   * @param {Object} sentimentTrainer - 학습 파이프라인 인스턴스
    * @returns {Promise<Array>} 감성 태그가 추가된 기사 배열
    */
   async classifyArticlesWithLLM(articles, llmService, query, sentimentTrainer = null) {
@@ -298,16 +299,72 @@ class ArticleSentimentClassifier {
       return [];
     }
 
+    const LOCAL_MODEL_MIN_ACCURACY = 0.80;
+
+    // 로컬 모델 사용 가능 여부 확인
+    const canUseLocal = sentimentTrainer
+      && sentimentTrainer.classifier
+      && sentimentTrainer.modelMetadata
+      && sentimentTrainer.modelMetadata.accuracy >= LOCAL_MODEL_MIN_ACCURACY;
+
+    if (canUseLocal) {
+      return this._classifyWithLocalModel(articles, query, sentimentTrainer);
+    }
+
+    return this._classifyWithLLM(articles, llmService, query, sentimentTrainer);
+  }
+
+  /**
+   * 로컬 임베딩 + 로지스틱 회귀 모델로 분류 (빠르고 무료)
+   */
+  async _classifyWithLocalModel(articles, query, sentimentTrainer) {
+    const accuracy = sentimentTrainer.modelMetadata.accuracy;
+    console.log(`[ArticleSentimentClassifier] Using LOCAL model (accuracy: ${(accuracy * 100).toFixed(1)}%) for ${articles.length} articles`);
+
+    try {
+      const titles = articles.map(a => a.title || '');
+      const predictions = await sentimentTrainer.predict(titles);
+
+      const result = articles.map((article, i) => ({
+        ...article,
+        sentiment: predictions[i].label,
+        sentimentScore: Math.round(predictions[i].confidence * 100),
+        matchedKeywords: [],
+        classificationMethod: 'local',
+        localConfidence: predictions[i].confidence,
+      }));
+
+      console.log(`[ArticleSentimentClassifier] Local model classification complete`);
+      return result;
+    } catch (error) {
+      console.error('[ArticleSentimentClassifier] Local model failed, falling back to LLM:', error.message);
+      return this._classifyWithLLM(articles, null, query, sentimentTrainer);
+    }
+  }
+
+  /**
+   * LLM(Cerebras)으로 분류 (정확하지만 느림) + 학습 데이터 자동 수집
+   */
+  async _classifyWithLLM(articles, llmService, query, sentimentTrainer) {
+    if (!llmService) {
+      console.warn('[ArticleSentimentClassifier] No LLM service available');
+      return articles.map(article => ({
+        ...article,
+        sentiment: 'neutral',
+        sentimentScore: 0,
+        matchedKeywords: [],
+        classificationMethod: 'fallback'
+      }));
+    }
+
     console.log(`[ArticleSentimentClassifier] Using LLM to classify ${articles.length} articles...`);
 
     try {
-      // LLM으로 각 기사 감성 분석
       const classifiedArticles = await llmService.analyzeSentimentBatch(articles, query);
 
-      // 추가 메타데이터 포함
       const result = classifiedArticles.map(article => ({
         ...article,
-        sentimentScore: 100, // LLM 분류는 높은 신뢰도
+        sentimentScore: 100,
         matchedKeywords: [],
         classificationMethod: 'llm'
       }));
@@ -325,7 +382,6 @@ class ArticleSentimentClassifier {
       return result;
     } catch (error) {
       console.error('[ArticleSentimentClassifier] LLM classification failed:', error.message);
-      // 실패 시 모두 중립으로 처리
       return articles.map(article => ({
         ...article,
         sentiment: 'neutral',
