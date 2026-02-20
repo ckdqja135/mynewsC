@@ -146,6 +146,40 @@ export class NewsApiService {
     }
   }
 
+  // 감성 키워드 조회
+  static async getKeywordSettings(): Promise<{ positive: string[]; negative: string[]; defaults: { positive: string[]; negative: string[] } }> {
+    try {
+      const response = await apiClient.get('/sentiment/keywords');
+      return response.data;
+    } catch (error) {
+      if (axios.isAxiosError(error)) {
+        const axiosError = error as AxiosError<ApiError>;
+        if (axiosError.response) {
+          const errorData = axiosError.response.data;
+          throw new Error(errorData?.detail || 'Failed to get keyword settings');
+        }
+      }
+      throw new Error('Failed to get keyword settings');
+    }
+  }
+
+  // 감성 키워드 저장
+  static async saveKeywordSettings(config: { positive: string[]; negative: string[] }): Promise<{ status: string; positive: string[]; negative: string[] }> {
+    try {
+      const response = await apiClient.put('/sentiment/keywords', config);
+      return response.data;
+    } catch (error) {
+      if (axios.isAxiosError(error)) {
+        const axiosError = error as AxiosError<ApiError>;
+        if (axiosError.response) {
+          const errorData = axiosError.response.data;
+          throw new Error(errorData?.detail || 'Failed to save keyword settings');
+        }
+      }
+      throw new Error('Failed to save keyword settings');
+    }
+  }
+
   static async healthCheck(): Promise<{ status: string }> {
     const response = await apiClient.get('/health');
     return response.data;

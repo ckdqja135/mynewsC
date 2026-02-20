@@ -166,10 +166,10 @@ export default function AnalyzePage() {
 
   const getSentimentEmoji = (sentiment: string) => {
     switch (sentiment.toLowerCase()) {
-      case 'positive': return '😊';
-      case 'negative': return '😟';
-      case 'neutral': return '😐';
-      default: return '🤔';
+      case 'positive': return '🟢';
+      case 'negative': return '🔴';
+      case 'neutral': return '🟡';
+      default: return '⚪';
     }
   };
 

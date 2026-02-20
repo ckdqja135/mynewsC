@@ -10,7 +10,7 @@ const { keywordSearchCache, semanticSearchCache, analysisCache } = require('./ut
 const app = express();
 
 // Middleware
-app.use(express.json());
+app.use(express.json({ limit: '50mb' }));
 app.use(cors({
   origin: '*',
   credentials: true,
@@ -52,7 +52,7 @@ try {
 }
 
 // Article Sentiment Classifier
-const { ArticleSentimentClassifier } = require('./services/articleSentimentClassifier');
+const { ArticleSentimentClassifier, DEFAULT_POSITIVE_KEYWORDS, DEFAULT_NEGATIVE_KEYWORDS } = require('./services/articleSentimentClassifier');
 const sentimentClassifier = new ArticleSentimentClassifier();
 
 // Sentiment Trainer (embedding-based classifier)
@@ -72,6 +72,36 @@ const larkBot = new LarkBotService();
 // Scheduler Service
 const { SchedulerService } = require('./services/schedulerService');
 const scheduler = new SchedulerService();
+
+// Lark 설정 영구 저장 경로
+const fs = require('fs');
+const LARK_CONFIG_FILE = require('path').join(__dirname, '..', 'data', 'lark_config.json');
+
+function saveLarkConfigToFile(config) {
+  try {
+    const dir = require('path').dirname(LARK_CONFIG_FILE);
+    if (!fs.existsSync(dir)) {
+      fs.mkdirSync(dir, { recursive: true });
+    }
+    fs.writeFileSync(LARK_CONFIG_FILE, JSON.stringify(config, null, 2), 'utf-8');
+    console.log('[Lark] Config saved to file');
+  } catch (err) {
+    console.error('[Lark] Failed to save config to file:', err.message);
+  }
+}
+
+function loadLarkConfigFromFile() {
+  try {
+    if (fs.existsSync(LARK_CONFIG_FILE)) {
+      const data = JSON.parse(fs.readFileSync(LARK_CONFIG_FILE, 'utf-8'));
+      console.log('[Lark] Config loaded from file');
+      return data;
+    }
+  } catch (err) {
+    console.warn('[Lark] Failed to load config from file:', err.message);
+  }
+  return null;
+}
 
 // ==================== Helper functions ====================
 
@@ -107,15 +137,13 @@ async function fetchFromAllSources(q, hl, gl, num, excludedSources, rssMaxPerFee
     console.log('[DEBUG] Skipping Naver News (excluded)');
   }
 
-  // 3. Daum News (scraping) - parallel batch, up to 1000
-  if (!excludedSources.includes('daum')) {
-    tasks.push(daumService.searchNews(q, Math.min(num, 1000)));
-  } else {
-    console.log('[DEBUG] Skipping Daum News (excluded)');
-  }
+  // 3. Daum News - disabled
+  // if (!excludedSources.includes('daum')) {
+  //   tasks.push(daumService.searchNews(q, Math.min(num, 1000)));
+  // }
 
-  // 4. RSS Feeds (Korean: no filter, International: keyword filter)
-  tasks.push(rssParser.searchNews(q, rssMaxPerFeed, excludedSources));
+  // 4. RSS Feeds - disabled
+  // tasks.push(rssParser.searchNews(q, rssMaxPerFeed, excludedSources));
 
   const results = await Promise.allSettled(tasks);
 
@@ -131,6 +159,49 @@ async function fetchFromAllSources(q, hl, gl, num, excludedSources, rssMaxPerFee
 }
 
 /**
+ * Normalize title for dedup comparison.
+ * Strips whitespace, special chars, brackets, and lowercases.
+ */
+function normalizeTitle(title) {
+  if (!title) return '';
+  return title
+    .toLowerCase()
+    .replace(/\[.*?\]/g, '')   // remove [brackets]
+    .replace(/【.*?】/g, '')    // remove 【brackets】
+    .replace(/\(.*?\)/g, '')   // remove (parens)
+    .replace(/[^\w가-힣a-z0-9]/g, '') // keep only alphanumeric + Korean
+    .trim();
+}
+
+/**
+ * Check if two titles are similar enough to be duplicates.
+ * Uses normalized exact match + Jaccard bigram similarity for near-duplicates.
+ */
+function areTitlesSimilar(titleA, titleB, threshold = 0.75) {
+  const normA = normalizeTitle(titleA);
+  const normB = normalizeTitle(titleB);
+
+  // Exact normalized match
+  if (normA === normB) return true;
+  if (!normA || !normB) return false;
+
+  // Bigram-based Jaccard similarity for near-duplicates
+  const bigramsA = new Set();
+  const bigramsB = new Set();
+  for (let i = 0; i < normA.length - 1; i++) bigramsA.add(normA.slice(i, i + 2));
+  for (let i = 0; i < normB.length - 1; i++) bigramsB.add(normB.slice(i, i + 2));
+
+  let intersection = 0;
+  for (const bg of bigramsA) {
+    if (bigramsB.has(bg)) intersection++;
+  }
+  const union = bigramsA.size + bigramsB.size - intersection;
+  if (union === 0) return false;
+
+  return (intersection / union) >= threshold;
+}
+
+/**
  * Deduplicate and filter articles
  */
 function deduplicateAndFilter(articles, excludedSources) {
@@ -142,14 +213,30 @@ function deduplicateAndFilter(articles, excludedSources) {
     console.log(`[DEBUG] Filtered ${before - filtered.length} articles from excluded sources`);
   }
 
-  // Remove duplicates by ID
+  // Phase 1: Remove exact duplicates by ID
   const seenIds = new Set();
-  const unique = [];
+  const uniqueById = [];
   for (const article of filtered) {
     if (!seenIds.has(article.id)) {
       seenIds.add(article.id);
-      unique.push(article);
+      uniqueById.push(article);
     }
+  }
+
+  // Phase 2: Remove duplicates by similar title
+  const unique = [];
+  let titleDupes = 0;
+  for (const article of uniqueById) {
+    const isDupe = unique.some(existing => areTitlesSimilar(existing.title, article.title));
+    if (!isDupe) {
+      unique.push(article);
+    } else {
+      titleDupes++;
+    }
+  }
+
+  if (titleDupes > 0) {
+    console.log(`[DEDUP] Removed ${titleDupes} title-similar duplicates (${uniqueById.length} → ${unique.length})`);
   }
 
   return unique;
@@ -480,6 +567,40 @@ app.post('/api/news/classify-sentiment', async (req, res) => {
   } catch (error) {
     console.error('[Sentiment] Classification error:', error);
     res.status(500).json({ detail: `Failed to classify sentiment: ${error.message}` });
+  }
+});
+
+// ==================== Sentiment Keywords ====================
+
+// 현재 감성 키워드 조회
+app.get('/api/sentiment/keywords', (req, res) => {
+  try {
+    const keywords = sentimentClassifier.getKeywords();
+    res.json({
+      ...keywords,
+      defaults: {
+        positive: DEFAULT_POSITIVE_KEYWORDS,
+        negative: DEFAULT_NEGATIVE_KEYWORDS,
+      }
+    });
+  } catch (err) {
+    res.status(500).json({ detail: err.message });
+  }
+});
+
+// 감성 키워드 업데이트
+app.put('/api/sentiment/keywords', (req, res) => {
+  const { positive, negative } = req.body;
+
+  if (!Array.isArray(positive) || !Array.isArray(negative)) {
+    return res.status(400).json({ detail: 'positive and negative must be arrays of strings' });
+  }
+
+  try {
+    const updated = sentimentClassifier.setKeywords(positive, negative);
+    res.json({ status: 'success', ...updated });
+  } catch (err) {
+    res.status(500).json({ detail: err.message });
   }
 });
 
@@ -967,78 +1088,80 @@ app.post('/api/lark/send-manual', async (req, res) => {
   }
 });
 
+// Lark 스케줄 작업 함수 (설정 저장 + 서버 시작 시 복원에서 공유)
+function createLarkTaskFunction() {
+  return async (config) => {
+    console.log(`[Lark Schedule] Running scheduled job for query: ${config.query}`);
+
+    try {
+      // 뉴스 수집
+      const articles = await fetchFromAllSources(
+        config.query,
+        'ko',
+        'kr',
+        config.num,
+        config.excluded_sources
+      );
+      const uniqueArticles = deduplicateAndFilter(articles, config.excluded_sources);
+
+      if (uniqueArticles.length === 0) {
+        console.warn(`[Lark Schedule] No articles found for query: ${config.query}`);
+        return;
+      }
+
+      // AI 분석
+      const analysis = await llmService.analyzeComprehensive(config.query, uniqueArticles.slice(0, 20));
+
+      // 감성 분류 (LLM 기반 개별 기사 분석 + 자동 라벨 수집)
+      const classifiedArticles = await sentimentClassifier.classifyArticlesWithLLM(uniqueArticles, llmService, config.query, sentimentTrainer);
+
+      // 필터링
+      const filteredArticles = sentimentClassifier.filterBySentiment(
+        classifiedArticles,
+        config.sentimentTypes
+      );
+
+      if (filteredArticles.length === 0) {
+        console.warn(`[Lark Schedule] No articles with sentiment types: ${config.sentimentTypes.join(', ')}`);
+        return;
+      }
+
+      // Lark 전송
+      await larkBot.sendNewsDigest(
+        config.webhookUrl,
+        config.query,
+        filteredArticles.slice(0, 10),
+        analysis,
+        config.sentimentTypes
+      );
+
+      console.log(`[Lark Schedule] Message sent successfully: ${filteredArticles.length} articles`);
+    } catch (error) {
+      console.error(`[Lark Schedule] Job failed:`, error);
+    }
+  };
+}
+
 // 2. 스케줄 설정 저장
 app.post('/api/lark/schedule-config', async (req, res) => {
   const { enabled, schedule, webhookUrl, query, sentimentTypes, num, excluded_sources } = req.body;
 
-  // 스케줄 검증
-  if (!scheduler.validateCronExpression(schedule)) {
-    return res.status(400).json({ detail: 'Invalid cron expression' });
-  }
-
-  // Webhook URL 검증
-  if (!larkBot.validateWebhookUrl(webhookUrl)) {
-    return res.status(400).json({ detail: 'Invalid Lark webhook URL' });
-  }
+  // 항상 파일에 저장 (enabled 여부 상관없이 설정값 보존)
+  saveLarkConfigToFile(req.body);
 
   try {
     if (enabled) {
+      // 활성화 시에만 검증
+      if (!scheduler.validateCronExpression(schedule)) {
+        return res.status(400).json({ detail: 'Invalid cron expression' });
+      }
+      if (!larkBot.validateWebhookUrl(webhookUrl)) {
+        return res.status(400).json({ detail: 'Invalid Lark webhook URL' });
+      }
       const jobId = 'lark-news-notification';
 
-      // 스케줄 작업 함수
-      const taskFunction = async (config) => {
-        console.log(`[Lark Schedule] Running scheduled job for query: ${config.query}`);
-
-        try {
-          // 뉴스 수집
-          const articles = await fetchFromAllSources(
-            config.query,
-            'ko',
-            'kr',
-            config.num,
-            config.excluded_sources
-          );
-          const uniqueArticles = deduplicateAndFilter(articles, config.excluded_sources);
-
-          if (uniqueArticles.length === 0) {
-            console.warn(`[Lark Schedule] No articles found for query: ${config.query}`);
-            return;
-          }
-
-          // AI 분석
-          const analysis = await llmService.analyzeComprehensive(config.query, uniqueArticles.slice(0, 20));
-
-          // 감성 분류 (LLM 기반 개별 기사 분석 + 자동 라벨 수집)
-          const classifiedArticles = await sentimentClassifier.classifyArticlesWithLLM(uniqueArticles, llmService, config.query, sentimentTrainer);
-
-          // 필터링
-          const filteredArticles = sentimentClassifier.filterBySentiment(
-            classifiedArticles,
-            config.sentimentTypes
-          );
-
-          if (filteredArticles.length === 0) {
-            console.warn(`[Lark Schedule] No articles with sentiment types: ${config.sentimentTypes.join(', ')}`);
-            return;
-          }
-
-          // Lark 전송
-          await larkBot.sendNewsDigest(
-            config.webhookUrl,
-            config.query,
-            filteredArticles.slice(0, 10),
-            analysis,
-            config.sentimentTypes
-          );
-
-          console.log(`[Lark Schedule] Message sent successfully: ${filteredArticles.length} articles`);
-        } catch (error) {
-          console.error(`[Lark Schedule] Job failed:`, error);
-        }
-      };
-
       // 작업 추가/업데이트
-      const result = scheduler.addJob(jobId, schedule, req.body, taskFunction);
+      const result = scheduler.addJob(jobId, schedule, req.body, createLarkTaskFunction());
 
       res.json({
         success: true,
@@ -1074,7 +1197,13 @@ app.get('/api/lark/schedule-config', (req, res) => {
         nextRun: larkJob.nextRun
       });
     } else {
-      res.json({ enabled: false });
+      // 스케줄러에 없으면 파일에서 로드 (서버 재시작 후 설정값 보존)
+      const savedConfig = loadLarkConfigFromFile();
+      if (savedConfig) {
+        res.json(savedConfig);
+      } else {
+        res.json({ enabled: false });
+      }
     }
   } catch (error) {
     console.error('[Lark] Get schedule config error:', error);
@@ -1086,6 +1215,13 @@ app.get('/api/lark/schedule-config', (req, res) => {
 app.delete('/api/lark/schedule-config', (req, res) => {
   try {
     const removed = scheduler.removeJob('lark-news-notification');
+
+    // 파일도 삭제
+    try {
+      if (fs.existsSync(LARK_CONFIG_FILE)) {
+        fs.unlinkSync(LARK_CONFIG_FILE);
+      }
+    } catch (e) { /* ignore */ }
 
     if (removed) {
       res.json({
@@ -1103,6 +1239,22 @@ app.delete('/api/lark/schedule-config', (req, res) => {
     res.status(500).json({ detail: error.message });
   }
 });
+
+// ==================== Restore Lark Schedule on Startup ====================
+
+(() => {
+  const savedConfig = loadLarkConfigFromFile();
+  if (savedConfig && savedConfig.enabled && savedConfig.schedule && savedConfig.webhookUrl) {
+    try {
+      if (scheduler.validateCronExpression(savedConfig.schedule)) {
+        scheduler.addJob('lark-news-notification', savedConfig.schedule, savedConfig, createLarkTaskFunction());
+        console.log(`[Lark] Restored scheduled job from saved config (query: "${savedConfig.query}")`);
+      }
+    } catch (err) {
+      console.warn('[Lark] Failed to restore scheduled job:', err.message);
+    }
+  }
+})();
 
 // ==================== Start Server ====================
 

@@ -221,7 +221,7 @@ export default function LarkSettingsPage() {
                     }}
                   />
                   <span className={styles.sentimentBadge} style={{ backgroundColor: '#ffebee', color: '#f44336' }}>
-                    😟 부정 뉴스
+                    🔴 부정 뉴스
                   </span>
                 </label>
                 <label className={styles.checkboxLabel}>
@@ -239,7 +239,7 @@ export default function LarkSettingsPage() {
                     }}
                   />
                   <span className={styles.sentimentBadge} style={{ backgroundColor: '#e8f5e9', color: '#4caf50' }}>
-                    😊 긍정 뉴스
+                    🟢 긍정 뉴스
                   </span>
                 </label>
                 <label className={styles.checkboxLabel}>
@@ -257,7 +257,7 @@ export default function LarkSettingsPage() {
                     }}
                   />
                   <span className={styles.sentimentBadge} style={{ backgroundColor: '#fff3e0', color: '#ff9800' }}>
-                    😐 중립 뉴스
+                    🟡 중립 뉴스
                   </span>
                 </label>
               </div>

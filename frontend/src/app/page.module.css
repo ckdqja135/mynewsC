@@ -1725,6 +1725,42 @@
   color: var(--text-tertiary);
 }
 
+.schedulePresets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.schedulePresetChip {
+  padding: 6px 14px;
+  font-size: 13px;
+  font-weight: 500;
+  border: 1.5px solid var(--border-color);
+  border-radius: 20px;
+  background: var(--bg-secondary);
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.schedulePresetChip:hover {
+  border-color: var(--accent-color);
+  color: var(--accent-color);
+  background: var(--bg-hover);
+}
+
+.schedulePresetActive {
+  border-color: var(--accent-color);
+  background: var(--accent-color);
+  color: white;
+}
+
+.schedulePresetActive:hover {
+  background: var(--accent-color);
+  color: white;
+}
+
 .searchModeOptions {
   display: flex;
   gap: 12px;
@@ -2436,4 +2472,148 @@
     flex: 1;
     min-width: 100px;
   }
+}
+
+/* 감성 키워드 설정 */
+.keywordSection {
+  margin-bottom: 24px;
+}
+
+.keywordSectionTitle {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text-primary);
+  margin: 0 0 12px 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.keywordChips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 14px;
+  background: var(--bg-hover);
+  border-radius: 10px;
+  border: 2px solid var(--border-color);
+  min-height: 48px;
+  margin-bottom: 10px;
+}
+
+.keywordChip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  background: var(--bg-secondary);
+  border: 1.5px solid var(--border-color);
+  border-radius: 20px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-primary);
+  transition: all 0.2s ease;
+}
+
+.keywordChip:hover {
+  border-color: var(--accent-color);
+}
+
+.keywordChipNegative {
+  border-color: #f4433640;
+  background: #ffebee20;
+}
+
+.keywordChipPositive {
+  border-color: #4caf5040;
+  background: #e8f5e920;
+}
+
+.keywordChipDelete {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  border: none;
+  background: transparent;
+  color: var(--text-tertiary);
+  font-size: 14px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  padding: 0;
+  line-height: 1;
+}
+
+.keywordChipDelete:hover {
+  background: #f4433630;
+  color: #f44336;
+}
+
+.keywordInputRow {
+  display: flex;
+  gap: 8px;
+}
+
+.keywordInput {
+  flex: 1;
+  padding: 10px 14px;
+  font-size: 14px;
+  font-weight: 500;
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  border: 2px solid var(--border-color);
+  border-radius: 8px;
+  transition: all 0.2s ease;
+}
+
+.keywordInput:focus {
+  outline: none;
+  border-color: var(--accent-color);
+  box-shadow: 0 0 0 3px var(--glow);
+}
+
+.keywordInput::placeholder {
+  color: var(--text-tertiary);
+}
+
+.keywordAddButton {
+  padding: 10px 20px;
+  font-size: 14px;
+  font-weight: 700;
+  background: var(--accent-gradient);
+  color: white;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  white-space: nowrap;
+}
+
+.keywordAddButton:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px var(--glow);
+}
+
+.keywordResetButton {
+  width: 100%;
+  padding: 12px 20px;
+  font-size: 14px;
+  font-weight: 600;
+  background: var(--bg-hover);
+  color: var(--text-secondary);
+  border: 2px solid var(--border-color);
+  border-radius: 10px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  margin-top: 16px;
+}
+
+.keywordResetButton:hover {
+  background: var(--bg-secondary);
+  border-color: var(--text-secondary);
+  color: var(--text-primary);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px var(--shadow-md);
 }

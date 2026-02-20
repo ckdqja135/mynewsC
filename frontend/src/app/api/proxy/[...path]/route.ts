@@ -5,73 +5,76 @@ const BACKEND_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 // Vercel serverless function timeout (max 60s for Pro, 10s for Free)
 export const maxDuration = 60;
 
-export async function GET(
+async function proxyRequest(
   request: NextRequest,
-  { params }: { params: { path: string[] } }
+  params: { path: string[] },
+  method: string
 ) {
   const path = params.path.join('/');
   const searchParams = request.nextUrl.searchParams.toString();
   const url = `${BACKEND_URL}/api/${path}${searchParams ? `?${searchParams}` : ''}`;
 
-  console.log('[Proxy GET]', url);
+  console.log(`[Proxy ${method}]`, url);
 
   try {
-    const response = await fetch(url, {
-      method: 'GET',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-    });
+    const fetchOptions: RequestInit = {
+      method,
+      headers: { 'Content-Type': 'application/json' },
+    };
 
+    // Body가 있는 메서드
+    if (['POST', 'PUT', 'PATCH'].includes(method)) {
+      const body = await request.json();
+      fetchOptions.body = JSON.stringify(body);
+
+      // LLM 분석 등 긴 작업용 타임아웃 (3분)
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 180000);
+      fetchOptions.signal = controller.signal;
+
+      const response = await fetch(url, fetchOptions);
+      clearTimeout(timeoutId);
+
+      const data = await response.json();
+      return NextResponse.json(data, { status: response.status });
+    }
+
+    const response = await fetch(url, fetchOptions);
     const data = await response.json();
     return NextResponse.json(data, { status: response.status });
   } catch (error) {
-    console.error('[Proxy GET Error]', error);
+    console.error(`[Proxy ${method} Error]`, error);
     return NextResponse.json(
-      { error: 'Failed to fetch from backend', details: String(error) },
-      { status: 500 }
+      { detail: `Backend request failed: ${String(error)}` },
+      { status: 502 }
     );
   }
+}
+
+export async function GET(
+  request: NextRequest,
+  { params }: { params: { path: string[] } }
+) {
+  return proxyRequest(request, params, 'GET');
 }
 
 export async function POST(
   request: NextRequest,
   { params }: { params: { path: string[] } }
 ) {
-  const path = params.path.join('/');
-  const url = `${BACKEND_URL}/api/${path}`;
+  return proxyRequest(request, params, 'POST');
+}
 
-  console.log('[Proxy POST]', url);
-  console.log('[Proxy BACKEND_URL]', BACKEND_URL);
+export async function PUT(
+  request: NextRequest,
+  { params }: { params: { path: string[] } }
+) {
+  return proxyRequest(request, params, 'PUT');
+}
 
-  try {
-    const body = await request.json();
-    console.log('[Proxy Body]', body);
-
-    // Increased timeout for LLM analysis (3 minutes)
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 180000);
-
-    const response = await fetch(url, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(body),
-      signal: controller.signal,
-    });
-
-    clearTimeout(timeoutId);
-
-    console.log('[Proxy Response Status]', response.status);
-
-    const data = await response.json();
-    return NextResponse.json(data, { status: response.status });
-  } catch (error) {
-    console.error('[Proxy POST Error]', error);
-    return NextResponse.json(
-      { error: 'Failed to fetch from backend', details: String(error), backend_url: BACKEND_URL },
-      { status: 500 }
-    );
-  }
+export async function DELETE(
+  request: NextRequest,
+  { params }: { params: { path: string[] } }
+) {
+  return proxyRequest(request, params, 'DELETE');
 }

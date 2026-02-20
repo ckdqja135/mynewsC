@@ -71,6 +71,155 @@ const NEWS_SOURCES = [
   { id: 'Time', name: 'Time', category: '기타' },
 ];
 
+// 자연어 → cron 표현식 파서
+const parseNaturalSchedule = (text: string): { cron: string; description: string } | null => {
+  const t = text.trim();
+  if (!t) return null;
+
+  // 이미 cron 표현식인 경우 (5개 토큰, 각 토큰이 cron 문자로만 구성)
+  const cronParts = t.split(/\s+/);
+  if (cronParts.length === 5 && cronParts.every(p => /^[\d\*\/,\-]+$/.test(p))) {
+    return { cron: t, description: cronToNatural(t) };
+  }
+
+  // 시간 파싱 헬퍼
+  const parseTime = (str: string): { hour: number; minute: number } | null => {
+    const match = str.match(/(오전|오후)?\s*(\d{1,2})시\s*(\d{1,2})?\s*분?/);
+    if (!match) return null;
+    let hour = parseInt(match[2]);
+    const minute = match[3] ? parseInt(match[3]) : 0;
+    if (match[1] === '오후' && hour < 12) hour += 12;
+    if (match[1] === '오전' && hour === 12) hour = 0;
+    if (hour > 23 || minute > 59) return null;
+    return { hour, minute };
+  };
+
+  // N분마다
+  const minMatch = t.match(/(\d+)\s*분\s*마다/);
+  if (minMatch) {
+    const n = parseInt(minMatch[1]);
+    if (n >= 1 && n <= 59) return { cron: `*/${n} * * * *`, description: `${n}분마다 실행` };
+  }
+
+  // N시간마다
+  const hourMatch = t.match(/(\d+)\s*시간\s*마다/);
+  if (hourMatch) {
+    const n = parseInt(hourMatch[1]);
+    if (n >= 1 && n <= 23) return { cron: `0 */${n} * * *`, description: `${n}시간마다 실행` };
+  }
+
+  // 요일 매핑
+  const dayMap: Record<string, string> = {
+    '일요일': '0', '월요일': '1', '화요일': '2', '수요일': '3',
+    '목요일': '4', '금요일': '5', '토요일': '6',
+    '일': '0', '월': '1', '화': '2', '수': '3',
+    '목': '4', '금': '5', '토': '6',
+  };
+
+  // 매주 [요일] [시간]
+  const weeklyMatch = t.match(/매주\s*(일요일|월요일|화요일|수요일|목요일|금요일|토요일|일|월|화|수|목|금|토)\s*(.*)/);
+  if (weeklyMatch) {
+    const dow = dayMap[weeklyMatch[1]];
+    const time = parseTime(weeklyMatch[2]);
+    if (time && dow !== undefined) {
+      return { cron: `${time.minute} ${time.hour} * * ${dow}`, description: `매주 ${weeklyMatch[1]} ${time.hour}시${time.minute ? ` ${time.minute}분` : ''} 실행` };
+    }
+  }
+
+  // 평일 [시간]
+  const weekdayMatch = t.match(/평일\s*(.*)/);
+  if (weekdayMatch) {
+    const time = parseTime(weekdayMatch[1]);
+    if (time) {
+      return { cron: `${time.minute} ${time.hour} * * 1-5`, description: `평일 ${time.hour}시${time.minute ? ` ${time.minute}분` : ''} 실행` };
+    }
+  }
+
+  // 주말 [시간]
+  const weekendMatch = t.match(/주말\s*(.*)/);
+  if (weekendMatch) {
+    const time = parseTime(weekendMatch[1]);
+    if (time) {
+      return { cron: `${time.minute} ${time.hour} * * 0,6`, description: `주말 ${time.hour}시${time.minute ? ` ${time.minute}분` : ''} 실행` };
+    }
+  }
+
+  // 매일 [시간], [시간] (복수 시간)
+  const dailyMultiMatch = t.match(/매일\s*(.*)/);
+  if (dailyMultiMatch) {
+    const timeParts = dailyMultiMatch[1].split(/[,과]\s*/);
+    if (timeParts.length > 1) {
+      const times = timeParts.map(tp => parseTime(tp.trim())).filter(Boolean) as { hour: number; minute: number }[];
+      if (times.length > 1 && times.every(tt => tt.minute === 0)) {
+        const hours = times.map(tt => tt.hour).join(',');
+        const formatH = (h: number) => h < 12 ? `오전 ${h || 12}시` : `오후 ${h === 12 ? 12 : h - 12}시`;
+        return { cron: `0 ${hours} * * *`, description: `매일 ${times.map(tt => formatH(tt.hour)).join(', ')} 실행` };
+      }
+    }
+    const time = parseTime(dailyMultiMatch[1]);
+    if (time) {
+      return { cron: `${time.minute} ${time.hour} * * *`, description: `매일 ${time.hour}시${time.minute ? ` ${time.minute}분` : ''} 실행` };
+    }
+  }
+
+  // 단독 시간 표현 (매일로 간주)
+  const soloTime = parseTime(t);
+  if (soloTime) {
+    return { cron: `${soloTime.minute} ${soloTime.hour} * * *`, description: `매일 ${soloTime.hour}시${soloTime.minute ? ` ${soloTime.minute}분` : ''} 실행` };
+  }
+
+  return null;
+};
+
+// cron → 자연어 변환
+const cronToNatural = (cron: string): string => {
+  const parts = cron.trim().split(/\s+/);
+  if (parts.length !== 5) return cron;
+  const [min, hour, , , dow] = parts;
+
+  // N분마다
+  if (min.startsWith('*/') && hour === '*' && dow === '*') {
+    return `${min.slice(2)}분마다`;
+  }
+
+  // N시간마다
+  if (min === '0' && hour.startsWith('*/') && dow === '*') {
+    return `${hour.slice(2)}시간마다`;
+  }
+
+  const formatHour = (h: number) => {
+    if (h === 0) return '오전 12시';
+    if (h < 12) return `오전 ${h}시`;
+    if (h === 12) return '오후 12시';
+    return `오후 ${h - 12}시`;
+  };
+
+  // 복수 시간
+  if (hour.includes(',') && dow === '*') {
+    const hours = hour.split(',').map(h => formatHour(parseInt(h)));
+    const minute = parseInt(min);
+    const minStr = minute > 0 ? ` ${minute}분` : '';
+    return `매일 ${hours.map(h => h + minStr).join(', ')}`;
+  }
+
+  const h = parseInt(hour);
+  const m = parseInt(min);
+  if (isNaN(h)) return cron;
+  const timeStr = formatHour(h) + (m > 0 ? ` ${m}분` : '');
+
+  if (dow === '*') return `매일 ${timeStr}`;
+  if (dow === '1-5') return `평일 ${timeStr}`;
+  if (dow === '0,6') return `주말 ${timeStr}`;
+
+  const dayNames: Record<string, string> = {
+    '0': '일요일', '1': '월요일', '2': '화요일', '3': '수요일',
+    '4': '목요일', '5': '금요일', '6': '토요일',
+  };
+  if (dayNames[dow]) return `매주 ${dayNames[dow]} ${timeStr}`;
+
+  return cron;
+};
+
 export default function Home() {
   const [query, setQuery] = useState('');
   const [articles, setArticles] = useState<NewsArticle[] | NewsArticleWithScore[]>([]);
@@ -125,7 +274,7 @@ export default function Home() {
 
   // 설정 모달
   const [showSettings, setShowSettings] = useState<boolean>(false);
-  const [settingsTab, setSettingsTab] = useState<'auto-search' | 'lark'>('auto-search');
+  const [settingsTab, setSettingsTab] = useState<'auto-search' | 'lark' | 'keywords'>('auto-search');
   const [defaultQuery, setDefaultQuery] = useState<string>('');
   const [defaultSearchMode, setDefaultSearchMode] = useState<SearchMode>('keyword');
   const [defaultMinSimilarity, setDefaultMinSimilarity] = useState<number>(0.3);
@@ -158,14 +307,21 @@ export default function Home() {
   // Lark 설정 상태
   const [larkEnabled, setLarkEnabled] = useState(false);
   const [larkWebhookUrl, setLarkWebhookUrl] = useState('');
-  const [larkSchedule, setLarkSchedule] = useState('0 9 * * *');
-  const [larkCustomSchedule, setLarkCustomSchedule] = useState('');
+  const [larkScheduleText, setLarkScheduleText] = useState('매일 오전 9시');
   const [larkSentimentTypes, setLarkSentimentTypes] = useState<Set<SentimentType>>(
     new Set(['negative'])
   );
   const [larkQuery, setLarkQuery] = useState('');
   const [larkTestLoading, setLarkTestLoading] = useState(false);
   const [larkTestMessage, setLarkTestMessage] = useState('');
+
+  // 감성 키워드 설정 상태
+  const [customPositiveKeywords, setCustomPositiveKeywords] = useState<string[]>([]);
+  const [customNegativeKeywords, setCustomNegativeKeywords] = useState<string[]>([]);
+  const [defaultPositiveKeywords, setDefaultPositiveKeywords] = useState<string[]>([]);
+  const [defaultNegativeKeywords, setDefaultNegativeKeywords] = useState<string[]>([]);
+  const [newPositiveKeyword, setNewPositiveKeyword] = useState('');
+  const [newNegativeKeyword, setNewNegativeKeyword] = useState('');
 
   useEffect(() => {
     const savedTheme = localStorage.getItem('theme') as Theme;
@@ -263,7 +419,7 @@ export default function Home() {
         if (config) {
           setLarkEnabled(config.enabled);
           setLarkWebhookUrl(config.webhookUrl);
-          setLarkSchedule(config.schedule);
+          setLarkScheduleText(cronToNatural(config.schedule));
           setLarkQuery(config.query);
           setLarkSentimentTypes(new Set(config.sentimentTypes));
         }
@@ -273,6 +429,21 @@ export default function Home() {
     };
 
     loadLarkConfig();
+
+    // 감성 키워드 로드
+    const loadKeywords = async () => {
+      try {
+        const data = await NewsApiService.getKeywordSettings();
+        setCustomPositiveKeywords(data.positive);
+        setCustomNegativeKeywords(data.negative);
+        setDefaultPositiveKeywords(data.defaults.positive);
+        setDefaultNegativeKeywords(data.defaults.negative);
+      } catch (error) {
+        console.error('Failed to load keyword settings:', error);
+      }
+    };
+
+    loadKeywords();
   }, []);
 
   // 백엔드에서 필터링하므로 프론트엔드 필터링은 불필요
@@ -337,7 +508,7 @@ export default function Home() {
         webhookUrl: larkWebhookUrl,
         query: larkQuery,
         sentimentTypes: Array.from(larkSentimentTypes),
-        num: 20,
+        num: maxArticles,
         excluded_sources: Array.from(excludedSources)
       });
 
@@ -355,7 +526,7 @@ export default function Home() {
     try {
       const config: LarkConfig = {
         enabled: larkEnabled,
-        schedule: larkSchedule === 'custom' ? larkCustomSchedule : larkSchedule,
+        schedule: parseNaturalSchedule(larkScheduleText)?.cron || '0 9 * * *',
         webhookUrl: larkWebhookUrl,
         query: larkQuery,
         sentimentTypes: Array.from(larkSentimentTypes),
@@ -393,6 +564,19 @@ export default function Home() {
       }
     }
 
+    // 키워드 설정 저장
+    if (settingsTab === 'keywords') {
+      try {
+        await NewsApiService.saveKeywordSettings({
+          positive: customPositiveKeywords,
+          negative: customNegativeKeywords,
+        });
+      } catch (error) {
+        alert('키워드 설정 저장 실패: ' + (error instanceof Error ? error.message : '알 수 없는 오류'));
+        return;
+      }
+    }
+
     setShowSettings(false);
   };
 
@@ -405,24 +589,9 @@ export default function Home() {
     // 검색 키워드 정규화
     const queryKeywords = searchQuery.toLowerCase().split(/\s+/).filter(w => w.length >= 2);
 
-    // 강제 부정 키워드 (매우 명확한 부정적 사건만)
-    const forceNegativeKeywords = [
-      '이물질 검출', '리콜', '회수 조치', '사망자', '사망 사고', '폭발 사고', '화재 발생',
-      '중상자', '사상자 발생', '오염 물질', '유해 물질', '독성 물질',
-      '발암 물질', '위반 적발', '구속', '체포', '불법 행위',
-      '횡령', '배임', '결함 발견', '불량품', '제품 하자',
-      '오작동 사고', '붕괴 사고', '침수 피해', '침몰 사고', '추락 사고',
-      '누출 사고', '유출 사고', '집단 감염', '확진자 급증'
-    ];
-
-    // 강제 긍정 키워드 (명확한 성과/긍정 지표)
-    const forcePositiveKeywords = [
-      '대상 수상', '최고상 수상', '1위 달성', '우승', '세계 최초', '국내 최초',
-      '신기록 달성', '쾌거', '극찬', '혁신상',
-      '호재', '급등', '급동', '호실적', '대박', '흥행', '호평', '완판',
-      '성공적', '성과', '수상', '쾌속', '상승세', '호조', '성장세',
-      '돌풍', '인기', '매진', '최고 실적', '역대 최고', '기록 경신'
-    ];
+    // 커스텀 감성 키워드 사용 (state에서 로드)
+    const forceNegativeKeywords = customNegativeKeywords;
+    const forcePositiveKeywords = customPositiveKeywords;
 
     const extractKeywords = (text: string): string[] => {
       if (!text) return [];
@@ -576,49 +745,7 @@ export default function Home() {
     }
   };
 
-  // 감성 필터 변경 시 분석만 재실행 (분류는 이미 완료된 상태)
-  const reAnalyzeWithFilter = async (newFilter: Set<SentimentType>) => {
-    const classified = classifiedArticlesRef.current;
-    if (!classified.length || !lastSearchQuery || analysisInProgress.current) return;
-
-    analysisInProgress.current = true;
-    setAnalysisLoading(true);
-    setProgressPercent(10);
-    setAnalysisStep('필터 변경 중...');
-
-    try {
-      const filtered = classified.filter((article: any) =>
-        newFilter.has(article.sentiment)
-      );
-
-      setProgressPercent(30);
-      setAnalysisStep(`AI 재분석 중... (${filtered.length}개 기사)`);
-
-      const response = await NewsApiService.analyzeNews({
-        q: lastSearchQuery,
-        hl: 'ko',
-        gl: 'kr',
-        num: 100,
-        analysis_type: 'comprehensive',
-        days_back: 30,
-        excluded_sources: Array.from(excludedSources),
-        articles: filtered,
-      });
-
-      setProgressPercent(100);
-      setAnalysisData(response);
-      setShowAnalysisPanel(true);
-    } catch (err) {
-      setAnalysisError(err instanceof Error ? err.message : '재분석에 실패했습니다');
-    } finally {
-      setAnalysisLoading(false);
-      setAnalysisStep('');
-      setProgressPercent(0);
-      analysisInProgress.current = false;
-    }
-  };
-
-  // 감성 필터 변경 핸들러
+  // 감성 필터 변경 핸들러 (클라이언트 사이드 필터링만, API 재호출 없음)
   const handleSentimentFilterChange = (type: SentimentType, checked: boolean) => {
     const newFilter = new Set(sentimentFilter);
     if (checked) {
@@ -627,11 +754,6 @@ export default function Home() {
       newFilter.delete(type);
     }
     setSentimentFilter(newFilter);
-
-    // 분류된 기사가 있으면 재분석
-    if (classifiedArticlesRef.current.length > 0 && newFilter.size > 0) {
-      reAnalyzeWithFilter(newFilter);
-    }
   };
 
   const handleSearchModeChange = (mode: SearchMode) => {
@@ -752,9 +874,9 @@ export default function Home() {
         });
       }
 
-      // 시맨틱 검색 시 항상 AI 분석 + 감성 분류 실행
-      if (mode === 'semantic' && responseArticles.length > 0) {
-        console.log('[Search] Semantic search completed, automatically running analysis...');
+      // 검색 완료 후 항상 AI 분석 + 감성 분류 실행
+      if (responseArticles.length > 0) {
+        console.log(`[Search] ${mode} search completed, automatically running analysis...`);
         performAnalysis(searchQuery, responseArticles);
       }
     } catch (err) {
@@ -794,8 +916,8 @@ export default function Home() {
       result = result.filter(article => bookmarkedArticles.has(article.id));
     }
 
-    // 감성 필터링 (AI 검색 시, 기사에 sentiment 필드가 있을 때)
-    if (searchMode === 'semantic' && sentimentFilter.size < 3) {
+    // 감성 필터링 (기사에 sentiment 필드가 있을 때)
+    if (sentimentFilter.size < 3) {
       result = result.filter(article => {
         const articleWithSentiment = article as any;
         if (!articleWithSentiment.sentiment) return true; // 분류 안 된 기사는 통과
@@ -1413,8 +1535,8 @@ export default function Home() {
                         color: (article as any).sentiment === 'positive' ? '#4caf50' :
                                (article as any).sentiment === 'negative' ? '#f44336' : '#ff9800'
                       }}>
-                        {(article as any).sentiment === 'positive' ? '😊 긍정' :
-                         (article as any).sentiment === 'negative' ? '😟 부정' : '😐 중립'}
+                        {(article as any).sentiment === 'positive' ? '🟢 긍정' :
+                         (article as any).sentiment === 'negative' ? '🔴 부정' : '🟡 중립'}
                       </span>
                     </div>
                   )}
@@ -1744,7 +1866,7 @@ export default function Home() {
                   transition: 'all 0.2s'
                 }}
               >
-                🔍 자동 검색 설정
+                🔍 자동 검색
               </button>
               <button
                 onClick={() => setSettingsTab('lark')}
@@ -1761,7 +1883,24 @@ export default function Home() {
                   transition: 'all 0.2s'
                 }}
               >
-                🔔 Lark 알림 설정
+                🔔 Lark 알림
+              </button>
+              <button
+                onClick={() => setSettingsTab('keywords')}
+                style={{
+                  flex: 1,
+                  padding: '16px',
+                  background: settingsTab === 'keywords' ? 'white' : 'transparent',
+                  border: 'none',
+                  borderBottom: settingsTab === 'keywords' ? '3px solid #667eea' : 'none',
+                  fontWeight: settingsTab === 'keywords' ? 600 : 400,
+                  fontSize: '15px',
+                  cursor: 'pointer',
+                  color: settingsTab === 'keywords' ? '#667eea' : '#666',
+                  transition: 'all 0.2s'
+                }}
+              >
+                🏷️ 감성 키워드
               </button>
             </div>
 
@@ -1929,33 +2068,47 @@ export default function Home() {
                 <h3 className={styles.sectionTitle} style={{ marginTop: '32px' }}>⏰ 알림 주기</h3>
 
                 <div className={styles.settingItem}>
-                  <label className={styles.settingLabel}>스케줄 선택</label>
-                  <select
-                    value={larkSchedule}
-                    onChange={(e) => setLarkSchedule(e.target.value)}
+                  <label className={styles.settingLabel}>알림 주기</label>
+                  <input
+                    type="text"
+                    value={larkScheduleText}
+                    onChange={(e) => setLarkScheduleText(e.target.value)}
+                    placeholder="예: 매일 오전 9시, 30분마다, 평일 오후 6시"
                     className={styles.settingInput}
-                  >
-                    <option value="0 9 * * *">매일 오전 9시</option>
-                    <option value="0 9 * * 1-5">평일 오전 9시</option>
-                    <option value="0 9,18 * * *">매일 오전 9시, 오후 6시</option>
-                    <option value="0 */6 * * *">6시간마다</option>
-                    <option value="0 9 * * 1">매주 월요일 9시</option>
-                    <option value="custom">직접 입력 (cron 표현식)</option>
-                  </select>
-
-                  {larkSchedule === 'custom' && (
-                    <input
-                      type="text"
-                      value={larkCustomSchedule}
-                      onChange={(e) => setLarkCustomSchedule(e.target.value)}
-                      placeholder="0 9 * * * (분 시 일 월 요일)"
-                      className={styles.settingInput}
-                      style={{ marginTop: '12px' }}
-                    />
-                  )}
-                  <p className={styles.helpText}>
-                    Cron 표현식 예시: "0 9 * * *" = 매일 오전 9시 (서버 시간대: Asia/Seoul)
-                  </p>
+                  />
+                  <div className={styles.schedulePresets}>
+                    {[
+                      { label: '1분마다', value: '1분마다' },
+                      { label: '매일 오전 9시', value: '매일 오전 9시' },
+                      { label: '평일 오전 9시', value: '평일 오전 9시' },
+                      { label: '6시간마다', value: '6시간마다' },
+                      { label: '매주 월요일 9시', value: '매주 월요일 오전 9시' },
+                    ].map((preset) => (
+                      <button
+                        key={preset.value}
+                        type="button"
+                        className={`${styles.schedulePresetChip} ${larkScheduleText === preset.value ? styles.schedulePresetActive : ''}`}
+                        onClick={() => setLarkScheduleText(preset.value)}
+                      >
+                        {preset.label}
+                      </button>
+                    ))}
+                  </div>
+                  {larkScheduleText && (() => {
+                    const parsed = parseNaturalSchedule(larkScheduleText);
+                    if (parsed) {
+                      return (
+                        <p className={styles.helpText} style={{ color: 'var(--accent-color)' }}>
+                          {parsed.description} — <code style={{ fontSize: '12px', opacity: 0.7 }}>{parsed.cron}</code>
+                        </p>
+                      );
+                    }
+                    return (
+                      <p className={styles.helpText} style={{ color: '#e74c3c' }}>
+                        인식할 수 없는 형식입니다. 예: 5분마다, 매일 오후 3시, 평일 오전 9시 30분
+                      </p>
+                    );
+                  })()}
                 </div>
 
                 <h3 className={styles.sectionTitle} style={{ marginTop: '32px' }}>🎯 감성 필터</h3>
@@ -1978,7 +2131,7 @@ export default function Home() {
                         }}
                       />
                       <span className={styles.sentimentBadge} style={{ backgroundColor: '#ffebee', color: '#f44336', padding: '6px 14px', borderRadius: '16px', fontWeight: 600, fontSize: '14px' }}>
-                        😟 부정 뉴스
+                        🔴 부정 뉴스
                       </span>
                     </label>
                     <label className={styles.checkboxLabel}>
@@ -1996,7 +2149,7 @@ export default function Home() {
                         }}
                       />
                       <span className={styles.sentimentBadge} style={{ backgroundColor: '#e8f5e9', color: '#4caf50', padding: '6px 14px', borderRadius: '16px', fontWeight: 600, fontSize: '14px' }}>
-                        😊 긍정 뉴스
+                        🟢 긍정 뉴스
                       </span>
                     </label>
                     <label className={styles.checkboxLabel}>
@@ -2014,7 +2167,7 @@ export default function Home() {
                         }}
                       />
                       <span className={styles.sentimentBadge} style={{ backgroundColor: '#fff3e0', color: '#ff9800', padding: '6px 14px', borderRadius: '16px', fontWeight: 600, fontSize: '14px' }}>
-                        😐 중립 뉴스
+                        🟡 중립 뉴스
                       </span>
                     </label>
                   </div>
@@ -2109,6 +2262,135 @@ export default function Home() {
                     </p>
                   </div>
                 </div>
+              </div>
+              )}
+
+              {/* 감성 키워드 설정 탭 */}
+              {settingsTab === 'keywords' && (
+              <div className={styles.settingSection}>
+                {/* 부정 키워드 */}
+                <div className={styles.keywordSection}>
+                  <h4 className={styles.keywordSectionTitle}>🔴 부정 키워드</h4>
+                  <div className={styles.keywordChips}>
+                    {customNegativeKeywords.map((kw, i) => (
+                      <span key={i} className={`${styles.keywordChip} ${styles.keywordChipNegative}`}>
+                        {kw}
+                        <button
+                          type="button"
+                          className={styles.keywordChipDelete}
+                          onClick={() => setCustomNegativeKeywords(prev => prev.filter((_, idx) => idx !== i))}
+                          aria-label={`${kw} 삭제`}
+                        >
+                          ✕
+                        </button>
+                      </span>
+                    ))}
+                    {customNegativeKeywords.length === 0 && (
+                      <span style={{ color: 'var(--text-tertiary)', fontSize: '13px' }}>키워드가 없습니다</span>
+                    )}
+                  </div>
+                  <div className={styles.keywordInputRow}>
+                    <input
+                      type="text"
+                      value={newNegativeKeyword}
+                      onChange={(e) => setNewNegativeKeyword(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' && newNegativeKeyword.trim()) {
+                          e.preventDefault();
+                          const kw = newNegativeKeyword.trim();
+                          if (!customNegativeKeywords.includes(kw)) {
+                            setCustomNegativeKeywords(prev => [...prev, kw]);
+                          }
+                          setNewNegativeKeyword('');
+                        }
+                      }}
+                      placeholder="새 부정 키워드 입력..."
+                      className={styles.keywordInput}
+                    />
+                    <button
+                      type="button"
+                      className={styles.keywordAddButton}
+                      onClick={() => {
+                        const kw = newNegativeKeyword.trim();
+                        if (kw && !customNegativeKeywords.includes(kw)) {
+                          setCustomNegativeKeywords(prev => [...prev, kw]);
+                          setNewNegativeKeyword('');
+                        }
+                      }}
+                    >
+                      추가
+                    </button>
+                  </div>
+                </div>
+
+                {/* 긍정 키워드 */}
+                <div className={styles.keywordSection}>
+                  <h4 className={styles.keywordSectionTitle}>🟢 긍정 키워드</h4>
+                  <div className={styles.keywordChips}>
+                    {customPositiveKeywords.map((kw, i) => (
+                      <span key={i} className={`${styles.keywordChip} ${styles.keywordChipPositive}`}>
+                        {kw}
+                        <button
+                          type="button"
+                          className={styles.keywordChipDelete}
+                          onClick={() => setCustomPositiveKeywords(prev => prev.filter((_, idx) => idx !== i))}
+                          aria-label={`${kw} 삭제`}
+                        >
+                          ✕
+                        </button>
+                      </span>
+                    ))}
+                    {customPositiveKeywords.length === 0 && (
+                      <span style={{ color: 'var(--text-tertiary)', fontSize: '13px' }}>키워드가 없습니다</span>
+                    )}
+                  </div>
+                  <div className={styles.keywordInputRow}>
+                    <input
+                      type="text"
+                      value={newPositiveKeyword}
+                      onChange={(e) => setNewPositiveKeyword(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' && newPositiveKeyword.trim()) {
+                          e.preventDefault();
+                          const kw = newPositiveKeyword.trim();
+                          if (!customPositiveKeywords.includes(kw)) {
+                            setCustomPositiveKeywords(prev => [...prev, kw]);
+                          }
+                          setNewPositiveKeyword('');
+                        }
+                      }}
+                      placeholder="새 긍정 키워드 입력..."
+                      className={styles.keywordInput}
+                    />
+                    <button
+                      type="button"
+                      className={styles.keywordAddButton}
+                      onClick={() => {
+                        const kw = newPositiveKeyword.trim();
+                        if (kw && !customPositiveKeywords.includes(kw)) {
+                          setCustomPositiveKeywords(prev => [...prev, kw]);
+                          setNewPositiveKeyword('');
+                        }
+                      }}
+                    >
+                      추가
+                    </button>
+                  </div>
+                </div>
+
+                {/* 기본값으로 초기화 */}
+                <button
+                  type="button"
+                  className={styles.keywordResetButton}
+                  onClick={() => {
+                    if (confirm('키워드를 기본값으로 초기화하시겠습니까?')) {
+                      setCustomPositiveKeywords([...defaultPositiveKeywords]);
+                      setCustomNegativeKeywords([...defaultNegativeKeywords]);
+                    }
+                  }}
+                >
+                  🔄 기본값으로 초기화
+                </button>
               </div>
               )}
             </div>

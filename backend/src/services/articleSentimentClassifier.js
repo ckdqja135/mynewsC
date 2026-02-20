@@ -4,6 +4,28 @@
  * LLM 분석 결과에서 키워드를 추출하고 기사를 감성별로 분류하는 서비스
  */
 
+const fs = require('fs');
+const path = require('path');
+
+const KEYWORDS_FILE = path.join(__dirname, '..', '..', 'data', 'sentiment', 'custom_keywords.json');
+
+const DEFAULT_NEGATIVE_KEYWORDS = [
+  '이물질 검출', '리콜', '회수 조치', '사망자', '사망 사고', '폭발 사고', '화재 발생',
+  '중상자', '사상자 발생', '오염 물질', '유해 물질', '독성 물질',
+  '발암 물질', '위반 적발', '구속', '체포', '불법 행위',
+  '횡령', '배임', '결함 발견', '불량품', '제품 하자',
+  '오작동 사고', '붕괴 사고', '침수 피해', '침몰 사고', '추락 사고',
+  '누출 사고', '유출 사고', '집단 감염', '확진자 급증'
+];
+
+const DEFAULT_POSITIVE_KEYWORDS = [
+  '대상 수상', '최고상 수상', '1위 달성', '우승', '세계 최초', '국내 최초',
+  '신기록 달성', '쾌거', '극찬', '혁신상',
+  '호재', '급등', '급동', '호실적', '대박', '흥행', '호평', '완판',
+  '성공적', '성과', '수상', '쾌속', '상승세', '호조', '성장세',
+  '돌풍', '인기', '매진', '최고 실적', '역대 최고', '기록 경신'
+];
+
 class ArticleSentimentClassifier {
   constructor() {
     // 한국어 불용어 목록 (조사, 접속사 등)
@@ -15,24 +37,70 @@ class ArticleSentimentClassifier {
       '에서의', '에게의', '이나', '거나', '든지', '라도', '라든가', '부터', '까지'
     ]);
 
-    // 강제 부정 키워드 목록 (매우 명확한 부정적 사건만)
-    this.forceNegativeKeywords = [
-      '이물질 검출', '리콜', '회수 조치', '사망자', '사망 사고', '폭발 사고', '화재 발생',
-      '중상자', '사상자 발생', '오염 물질', '유해 물질', '독성 물질',
-      '발암 물질', '위반 적발', '구속', '체포', '불법 행위',
-      '횡령', '배임', '결함 발견', '불량품', '제품 하자',
-      '오작동 사고', '붕괴 사고', '침수 피해', '침몰 사고', '추락 사고',
-      '누출 사고', '유출 사고', '집단 감염', '확진자 급증'
-    ];
+    // JSON 파일에서 키워드 로드 (없으면 기본값 사용)
+    const loaded = this._loadKeywords();
+    this.forceNegativeKeywords = loaded.negative;
+    this.forcePositiveKeywords = loaded.positive;
+  }
 
-    // 강제 긍정 키워드 목록 (명확한 성과/긍정 지표)
-    this.forcePositiveKeywords = [
-      '대상 수상', '최고상 수상', '1위 달성', '우승', '세계 최초', '국내 최초',
-      '신기록 달성', '쾌거', '극찬', '혁신상',
-      '호재', '급등', '급동', '호실적', '대박', '흥행', '호평', '완판',
-      '성공적', '성과', '수상', '쾌속', '상승세', '호조', '성장세',
-      '돌풍', '인기', '매진', '최고 실적', '역대 최고', '기록 경신'
-    ];
+  /**
+   * JSON 파일에서 키워드 로드
+   */
+  _loadKeywords() {
+    try {
+      if (fs.existsSync(KEYWORDS_FILE)) {
+        const data = JSON.parse(fs.readFileSync(KEYWORDS_FILE, 'utf-8'));
+        console.log('[Sentiment] Loaded custom keywords from file');
+        return {
+          negative: Array.isArray(data.negative) ? data.negative : DEFAULT_NEGATIVE_KEYWORDS,
+          positive: Array.isArray(data.positive) ? data.positive : DEFAULT_POSITIVE_KEYWORDS,
+        };
+      }
+    } catch (err) {
+      console.warn('[Sentiment] Failed to load custom keywords, using defaults:', err.message);
+    }
+    return {
+      negative: [...DEFAULT_NEGATIVE_KEYWORDS],
+      positive: [...DEFAULT_POSITIVE_KEYWORDS],
+    };
+  }
+
+  /**
+   * 현재 키워드 반환
+   * @returns {{ positive: string[], negative: string[] }}
+   */
+  getKeywords() {
+    return {
+      positive: [...this.forcePositiveKeywords],
+      negative: [...this.forceNegativeKeywords],
+    };
+  }
+
+  /**
+   * 키워드 업데이트 + JSON 파일 저장
+   * @param {string[]} positive
+   * @param {string[]} negative
+   */
+  setKeywords(positive, negative) {
+    this.forcePositiveKeywords = Array.isArray(positive) ? positive : this.forcePositiveKeywords;
+    this.forceNegativeKeywords = Array.isArray(negative) ? negative : this.forceNegativeKeywords;
+
+    try {
+      const dir = path.dirname(KEYWORDS_FILE);
+      if (!fs.existsSync(dir)) {
+        fs.mkdirSync(dir, { recursive: true });
+      }
+      fs.writeFileSync(KEYWORDS_FILE, JSON.stringify({
+        positive: this.forcePositiveKeywords,
+        negative: this.forceNegativeKeywords,
+      }, null, 2), 'utf-8');
+      console.log('[Sentiment] Saved custom keywords to file');
+    } catch (err) {
+      console.error('[Sentiment] Failed to save custom keywords:', err.message);
+      throw err;
+    }
+
+    return this.getKeywords();
   }
 
   /**
@@ -326,15 +394,35 @@ class ArticleSentimentClassifier {
       const titles = articles.map(a => a.title || '');
       const predictions = await sentimentTrainer.predict(titles);
 
-      const result = articles.map((article, i) => ({
-        ...article,
-        sentiment: predictions[i].label,
-        sentimentScore: Math.round(predictions[i].confidence * 100),
-        matchedKeywords: [],
-        classificationMethod: 'local',
-        localConfidence: predictions[i].confidence,
-      }));
+      let forceOverrides = 0;
+      const result = articles.map((article, i) => {
+        // 강제 키워드 체크 (로컬 모델보다 우선)
+        const forced = this.checkForceKeywords(article);
+        if (forced) {
+          forceOverrides++;
+          return {
+            ...article,
+            sentiment: forced,
+            sentimentScore: 100,
+            matchedKeywords: [],
+            classificationMethod: 'local+forced',
+            localConfidence: predictions[i].confidence,
+          };
+        }
 
+        return {
+          ...article,
+          sentiment: predictions[i].label,
+          sentimentScore: Math.round(predictions[i].confidence * 100),
+          matchedKeywords: [],
+          classificationMethod: 'local',
+          localConfidence: predictions[i].confidence,
+        };
+      });
+
+      if (forceOverrides > 0) {
+        console.log(`[ArticleSentimentClassifier] Force keyword overrides: ${forceOverrides} articles`);
+      }
       console.log(`[ArticleSentimentClassifier] Local model classification complete`);
       return result;
     } catch (error) {
@@ -394,4 +482,4 @@ class ArticleSentimentClassifier {
   }
 }
 
-module.exports = { ArticleSentimentClassifier };
+module.exports = { ArticleSentimentClassifier, DEFAULT_POSITIVE_KEYWORDS, DEFAULT_NEGATIVE_KEYWORDS };

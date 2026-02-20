@@ -32,11 +32,11 @@ class LarkBotService {
   getSentimentEmoji(sentiment) {
     switch (sentiment) {
       case 'positive':
-        return '😊';
+        return '🟢';
       case 'negative':
-        return '😟';
+        return '🔴';
       case 'neutral':
-        return '😐';
+        return '🟡';
       default:
         return '📰';
     }
