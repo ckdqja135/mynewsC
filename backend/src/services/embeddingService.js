@@ -177,9 +177,7 @@ class EmbeddingService {
       const articleVector = this._tfidfVector(cached.tf);
       const similarity = this._cosineSimilarity(queryVector, articleVector);
 
-      if (similarity > 0) {
-        rawResults.push({ article, score: similarity });
-      }
+      rawResults.push({ article, score: Math.max(0, similarity) });
     }
 
     // Sort by similarity (highest first)
