@@ -397,26 +397,31 @@ class ArticleSentimentClassifier {
       let forceOverrides = 0;
       const result = articles.map((article, i) => {
         // 강제 키워드 체크 (로컬 모델보다 우선)
-        const forced = this.checkForceKeywords(article);
-        if (forced) {
-          forceOverrides++;
-          return {
-            ...article,
-            sentiment: forced,
-            sentimentScore: 100,
-            matchedKeywords: [],
-            classificationMethod: 'local+forced',
-            localConfidence: predictions[i].confidence,
-          };
+        // ML 모델이 기사 내용을 학습해서 판단한 결과를 우선 사용
+        // 강제 키워드는 ML 모델 confidence가 낮을 때만 보조적으로 적용
+        const confidence = predictions[i].confidence;
+        if (confidence < 0.5) {
+          const forced = this.checkForceKeywords(article);
+          if (forced) {
+            forceOverrides++;
+            return {
+              ...article,
+              sentiment: forced,
+              sentimentScore: 100,
+              matchedKeywords: [],
+              classificationMethod: 'local+forced',
+              localConfidence: confidence,
+            };
+          }
         }
 
         return {
           ...article,
           sentiment: predictions[i].label,
-          sentimentScore: Math.round(predictions[i].confidence * 100),
+          sentimentScore: Math.round(confidence * 100),
           matchedKeywords: [],
           classificationMethod: 'local',
-          localConfidence: predictions[i].confidence,
+          localConfidence: confidence,
         };
       });
 
