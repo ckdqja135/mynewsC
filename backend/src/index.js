@@ -357,9 +357,9 @@ app.post('/api/news/semantic-search', async (req, res) => {
     const uniqueArticles = deduplicateAndFilter(allArticles, excluded_sources);
     console.log(`[DEBUG] After deduplication: ${uniqueArticles.length} unique articles`);
 
-    // Rank by semantic similarity
+    // Rank by semantic similarity (no maxResults limit - let num handle it)
     const rankedResults = embeddingService.rankArticlesBySimilarity(
-      q, uniqueArticles, minSimilarity, num * 2
+      q, uniqueArticles, minSimilarity, null
     );
 
     console.log(`[DEBUG] After semantic filtering (min_similarity=${minSimilarity}): ${rankedResults.length} articles`);
