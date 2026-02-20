@@ -216,20 +216,18 @@ class ArticleSentimentClassifier {
       }
     }
 
-    // 1단계: 강제 키워드 체크 (우선순위 최상위)
-    const forcedSentiment = this.checkForceKeywords(article);
-    if (forcedSentiment) {
-      return {
-        sentiment: forcedSentiment,
-        score: 100, // 강제 분류는 높은 점수
-        keywords: forcedSentiment === 'negative' ? this.forceNegativeKeywords : this.forcePositiveKeywords,
-        forced: true
-      };
-    }
-
-    // 2단계: LLM 기반 감성 분류
-    // 감성 분석 결과가 없으면 중립으로 처리
+    // 1단계: LLM 기반 감성 분류 (내용 분석 우선)
+    // 감성 분석 결과가 없으면 강제 키워드로 판단
     if (!sentimentAnalysis) {
+      const forcedSentiment = this.checkForceKeywords(article);
+      if (forcedSentiment) {
+        return {
+          sentiment: forcedSentiment,
+          score: 100,
+          keywords: forcedSentiment === 'negative' ? this.forceNegativeKeywords : this.forcePositiveKeywords,
+          forced: true
+        };
+      }
       return {
         sentiment: 'neutral',
         score: 0,
@@ -254,7 +252,7 @@ class ArticleSentimentClassifier {
     const threshold = 1;
     const minDifference = 1;
 
-    // 감성 분류 로직
+    // 감성 분류 로직 (LLM 분석 결과 기반)
     if (positiveScore >= threshold && positiveScore > negativeScore && positiveScore - negativeScore >= minDifference) {
       return {
         sentiment: 'positive',
