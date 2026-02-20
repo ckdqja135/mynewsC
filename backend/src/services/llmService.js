@@ -308,14 +308,18 @@ Focus on factual, actionable information. Respond ONLY with valid JSON.`;
   async classifyTitlesBatch(titles, query) {
     const titlesText = titles.map((t, i) => `${i + 1}. "${t}"`).join('\n');
 
-    const prompt = `검색 키워드: "${query}"
+    const prompt = `각 기사 제목의 **전체 의미**를 보고 감성을 분류하세요.
+검색어에 속지 말고, 제목 전체가 전달하는 메시지를 판단하세요.
 
-다음 기사 제목들이 "${query}" 자체에 대해 긍정/부정/중립 중 어떤 감성인지 분류하세요.
+분류 기준:
+- positive: 제목 전체가 좋은 소식을 전달 (흥행, 성과, 수상, 성장 등)
+- negative: 제목 전체가 나쁜 소식을 전달 (손실, 적자, 논란, 실패, 비판, 수익 문제 등)
+- neutral: 단순 사실 전달이거나 판단이 어려운 경우
 
-**중요**: 회사의 주가, 재무, 실적 문제는 제품/콘텐츠 자체의 문제가 아닙니다.
-- positive: ${query} 자체에 대한 좋은 소식, 성과, 흥행, 인기, 수상
-- negative: ${query} 자체에 대한 문제, 비판, 논란, 사고, 실패
-- neutral: 단순 사실 전달, 회사/인물의 재무/주가 문제, 일반 보도
+예시:
+- "A 대박 B사, 팔아도 남는 게 없는 이유" → negative (대박이라는 단어가 있지만 전체 의미는 수익 문제)
+- "A 흥행 덕에 B사 매출 급증" → positive
+- "A 시즌2 제작 확정" → neutral
 
 기사 목록:
 ${titlesText}
@@ -328,7 +332,7 @@ ${titlesText}
         const response = await this.client.chat.completions.create({
           model: this.model,
           messages: [
-            { role: 'system', content: 'You are a sentiment classifier. For each numbered article, respond with the number and one word: positive, negative, or neutral. One per line.' },
+            { role: 'system', content: 'You are a Korean news sentiment classifier. Classify each article title based on its OVERALL meaning, not individual words. A title like "대박 but no profit" is NEGATIVE. Respond with number and one word per line.' },
             { role: 'user', content: prompt },
           ],
           temperature: 0.1,
@@ -336,17 +340,24 @@ ${titlesText}
         });
 
         const text = response.choices[0].message.content.trim().toLowerCase();
+        console.log(`[LLM] Raw response:\n${text}`);
         const results = titles.map(() => 'neutral');
 
+        let parsed = 0;
         for (const line of text.split('\n')) {
           const match = line.match(/(\d+)\D*(positive|negative|neutral)/);
           if (match) {
             const idx = parseInt(match[1]) - 1;
             if (idx >= 0 && idx < titles.length) {
               results[idx] = match[2];
+              parsed++;
             }
           }
         }
+
+        const counts = { positive: 0, negative: 0, neutral: 0 };
+        results.forEach(r => counts[r]++);
+        console.log(`[LLM] Parsed ${parsed}/${titles.length} - positive: ${counts.positive}, negative: ${counts.negative}, neutral: ${counts.neutral}`);
 
         return results;
       } catch (error) {
@@ -370,7 +381,7 @@ ${titlesText}
    * @returns {Promise<Array>} 감성이 태그된 기사 배열
    */
   async analyzeSentimentBatch(articles, query) {
-    const LLM_CLASSIFY_LIMIT = 30;
+    const LLM_CLASSIFY_LIMIT = 200;
     const BATCH_SIZE = 10;
 
     const toClassify = articles.slice(0, LLM_CLASSIFY_LIMIT);
