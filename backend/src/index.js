@@ -604,6 +604,24 @@ app.put('/api/sentiment/keywords', (req, res) => {
   }
 });
 
+// 감성 모델 리셋 (학습 데이터 + 모델 삭제)
+app.post('/api/sentiment/reset', (req, res) => {
+  if (!sentimentTrainer) {
+    return res.status(503).json({ detail: 'Sentiment trainer is not available' });
+  }
+
+  try {
+    const result = sentimentTrainer.resetModel();
+    // 캐시도 함께 클리어
+    keywordSearchCache.clear();
+    semanticSearchCache.clear();
+    analysisCache.clear();
+    res.json({ status: 'success', ...result, cacheCleared: true });
+  } catch (err) {
+    res.status(500).json({ detail: err.message });
+  }
+});
+
 // ==================== Sentiment Training ====================
 
 // 수동 라벨링

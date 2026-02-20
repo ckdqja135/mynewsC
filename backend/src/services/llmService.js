@@ -305,24 +305,27 @@ Focus on factual, actionable information. Respond ONLY with valid JSON.`;
    * @param {string} query - 검색 키워드
    * @returns {Promise<string[]>} 감성 배열 ('positive'|'negative'|'neutral')
    */
-  async classifyTitlesBatch(titles, query) {
-    const titlesText = titles.map((t, i) => `${i + 1}. "${t}"`).join('\n');
+  async classifyArticlesBatch(articles, query) {
+    const articlesText = articles.map((a, i) => {
+      const snippet = a.snippet ? ` | 내용: ${a.snippet.slice(0, 150)}` : '';
+      return `${i + 1}. 제목: "${a.title}"${snippet}`;
+    }).join('\n');
 
-    const prompt = `각 기사 제목의 **전체 의미**를 보고 감성을 분류하세요.
-검색어에 속지 말고, 제목 전체가 전달하는 메시지를 판단하세요.
+    const prompt = `각 기사의 제목과 내용을 보고 감성을 분류하세요.
+개별 단어가 아닌, 기사 전체가 전달하는 메시지를 판단하세요.
 
 분류 기준:
-- positive: 제목 전체가 좋은 소식을 전달 (흥행, 성과, 수상, 성장 등)
-- negative: 제목 전체가 나쁜 소식을 전달 (손실, 적자, 논란, 실패, 비판, 수익 문제 등)
-- neutral: 단순 사실 전달이거나 판단이 어려운 경우
+- positive: 좋은 소식 (흥행, 성과, 수상, 성장, 이익 증가 등)
+- negative: 나쁜 소식 (손실, 적자, 논란, 실패, 비판, 수익 문제 등)
+- neutral: 단순 사실 전달, 투자자 동향, 판단이 어려운 경우
 
 예시:
-- "A 대박 B사, 팔아도 남는 게 없는 이유" → negative (대박이라는 단어가 있지만 전체 의미는 수익 문제)
+- "A 대박 B사, 팔아도 남는 게 없는 이유" → negative (전체 의미는 수익 문제)
 - "A 흥행 덕에 B사 매출 급증" → positive
-- "A 시즌2 제작 확정" → neutral
+- "A사 주요 투자자, 일부 지분 매도" → neutral
 
 기사 목록:
-${titlesText}
+${articlesText}
 
 각 줄에 번호와 positive/negative/neutral만 출력하세요:`;
 
@@ -332,23 +335,23 @@ ${titlesText}
         const response = await this.client.chat.completions.create({
           model: this.model,
           messages: [
-            { role: 'system', content: 'You are a Korean news sentiment classifier. Classify each article title based on its OVERALL meaning, not individual words. A title like "대박 but no profit" is NEGATIVE. Respond with number and one word per line.' },
+            { role: 'system', content: 'You are a Korean news sentiment classifier. Classify each article based on its title AND content snippet. Focus on the OVERALL meaning, not individual words. Respond with number and one word per line.' },
             { role: 'user', content: prompt },
           ],
           temperature: 0.1,
-          max_tokens: titles.length * 15,
+          max_tokens: articles.length * 15,
         });
 
         const text = response.choices[0].message.content.trim().toLowerCase();
         console.log(`[LLM] Raw response:\n${text}`);
-        const results = titles.map(() => 'neutral');
+        const results = articles.map(() => 'neutral');
 
         let parsed = 0;
         for (const line of text.split('\n')) {
           const match = line.match(/(\d+)\D*(positive|negative|neutral)/);
           if (match) {
             const idx = parseInt(match[1]) - 1;
-            if (idx >= 0 && idx < titles.length) {
+            if (idx >= 0 && idx < articles.length) {
               results[idx] = match[2];
               parsed++;
             }
@@ -357,7 +360,7 @@ ${titlesText}
 
         const counts = { positive: 0, negative: 0, neutral: 0 };
         results.forEach(r => counts[r]++);
-        console.log(`[LLM] Parsed ${parsed}/${titles.length} - positive: ${counts.positive}, negative: ${counts.negative}, neutral: ${counts.neutral}`);
+        console.log(`[LLM] Parsed ${parsed}/${articles.length} - positive: ${counts.positive}, negative: ${counts.negative}, neutral: ${counts.neutral}`);
 
         return results;
       } catch (error) {
@@ -368,10 +371,10 @@ ${titlesText}
           continue;
         }
         console.error(`[LLM] Batch sentiment failed: ${error.message}`);
-        return titles.map(() => 'neutral');
+        return articles.map(() => 'neutral');
       }
     }
-    return titles.map(() => 'neutral');
+    return articles.map(() => 'neutral');
   }
 
   /**
@@ -393,9 +396,8 @@ ${titlesText}
 
     for (let i = 0; i < toClassify.length; i += BATCH_SIZE) {
       const batch = toClassify.slice(i, i + BATCH_SIZE);
-      const titles = batch.map(a => a.title);
 
-      const sentiments = await this.classifyTitlesBatch(titles, query);
+      const sentiments = await this.classifyArticlesBatch(batch, query);
 
       batch.forEach((article, j) => {
         classifiedResults.push({ ...article, sentiment: sentiments[j] });

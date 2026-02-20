@@ -842,6 +842,29 @@ class SentimentTrainer {
     this._saveLabeledData();
     return { removed: before - this.labeledData.length, remaining: this.labeledData.length };
   }
+
+  /**
+   * 모델과 학습 데이터 전체 리셋
+   */
+  resetModel() {
+    const stats = {
+      labelsRemoved: this.labeledData.length,
+      modelExisted: this.classifier !== null,
+    };
+
+    // 메모리 초기화
+    this.labeledData = [];
+    this.classifier = null;
+    this.modelMetadata = null;
+    this._newLlmLabelsSinceRetrain = 0;
+
+    // 파일 삭제
+    try { fs.unlinkSync(this.labelsPath); } catch (e) { /* ignore */ }
+    try { fs.unlinkSync(this.modelPath); } catch (e) { /* ignore */ }
+
+    console.log(`[SentimentTrainer] Model reset: ${stats.labelsRemoved} labels removed`);
+    return stats;
+  }
 }
 
 // Singleton
