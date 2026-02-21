@@ -152,6 +152,20 @@ class NaverNewsService {
         });
         if (snippet.length > 300) snippet = snippet.substring(0, 300);
 
+        // Find thumbnail image (article image, not publisher logo)
+        // Image is in parent container (sds-comps-base-layout), not in $item itself
+        let thumbnail = null;
+        const $articleContainer = $item.parent();
+        const $imgTarget = $articleContainer.length > 0 ? $articleContainer : $item;
+        $imgTarget.find('img[src^="http"]').each((_, el) => {
+          if (thumbnail) return false;
+          const src = $(el).attr('src') || '';
+          if (src.includes('imgnews') && !src.includes('mimgnews') && !src.includes('office_logo')) {
+            thumbnail = src;
+            return false;
+          }
+        });
+
         const articleId = generateNewsId(url, title);
 
         articles.push({
@@ -161,7 +175,7 @@ class NaverNewsService {
           source,
           publishedAt: publishedAt ? publishedAt.toISOString() : null,
           snippet: snippet || null,
-          thumbnail: null,
+          thumbnail,
         });
       } catch (err) {
         // Skip errors
