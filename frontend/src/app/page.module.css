@@ -491,15 +491,9 @@
 .historyItem {
   display: flex;
   align-items: center;
-  gap: 12px;
   width: 100%;
-  padding: 12px 16px;
-  background: transparent;
-  border: none;
   border-bottom: 1px solid var(--border-color);
-  cursor: pointer;
   transition: all 0.2s ease;
-  text-align: left;
 }
 
 .historyItem:last-child {
@@ -508,7 +502,37 @@
 
 .historyItem:hover {
   background: var(--bg-hover);
-  padding-left: 20px;
+}
+
+.historyItemText {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex: 1;
+  padding: 12px 16px;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  text-align: left;
+}
+
+.historyDeleteButton {
+  padding: 8px 12px;
+  background: transparent;
+  border: none;
+  color: var(--text-secondary);
+  cursor: pointer;
+  font-size: 13px;
+  opacity: 0;
+  transition: opacity 0.2s ease, color 0.2s ease;
+}
+
+.historyItem:hover .historyDeleteButton {
+  opacity: 1;
+}
+
+.historyDeleteButton:hover {
+  color: #e74c3c;
 }
 
 .historyIcon {
@@ -735,6 +759,8 @@
 
 /* 날짜 필터 */
 .dateFilter {
+  position: relative;
+  z-index: 10;
   margin-bottom: 25px;
   padding: 20px;
   background: var(--bg-secondary);
@@ -790,18 +816,69 @@
 .customDateRange {
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 16px;
-  background: var(--bg-hover);
+  gap: 14px;
+  padding: 14px 18px;
+  background: var(--bg-glass);
+  backdrop-filter: blur(10px);
   border-radius: 12px;
+  border: 1px solid var(--border-color);
+  box-shadow: 0 2px 8px var(--shadow-md);
   animation: slideDown 0.3s ease-out;
 }
 
-.dateInput {
+.dateInputGroup {
+  display: flex;
+  align-items: center;
+  gap: 10px;
   flex: 1;
-  padding: 10px 16px;
+  min-width: 0;
+}
+
+/* react-datepicker 래퍼가 flex 레이아웃을 깨지 않도록 */
+.dateInputGroup :global(.react-datepicker-wrapper) {
+  flex: 1;
+  min-width: 0;
+}
+
+.dateInputGroup :global(.react-datepicker__input-container) {
+  display: flex;
+}
+
+.dateInputLabel {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--accent-color);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.dateResetButton {
+  padding: 10px 18px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  background: var(--bg-hover);
+  border: 2px solid var(--border-color);
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  white-space: nowrap;
+}
+
+.dateResetButton:hover {
+  color: white;
+  background: var(--accent-gradient);
+  border-color: var(--accent-color);
+  box-shadow: 0 4px 12px var(--glow);
+  transform: translateY(-2px);
+}
+
+.dateInput {
+  width: 100%;
+  padding: 10px 14px;
   font-size: 14px;
   font-weight: 500;
+  font-family: inherit;
   background: var(--bg-secondary);
   color: var(--text-primary);
   border: 2px solid var(--border-color);
@@ -810,16 +887,27 @@
   transition: all 0.2s ease;
 }
 
+.dateInput:hover {
+  border-color: var(--accent-color);
+  box-shadow: 0 2px 8px var(--shadow);
+}
+
 .dateInput:focus {
   outline: none;
   border-color: var(--accent-color);
   box-shadow: 0 0 0 4px var(--glow);
 }
 
+.dateInput::placeholder {
+  color: var(--text-tertiary);
+  font-weight: 400;
+}
+
 .dateSeparator {
-  font-size: 18px;
+  font-size: 16px;
   font-weight: 700;
   color: var(--text-secondary);
+  flex-shrink: 0;
 }
 
 /* 성능 정보 */

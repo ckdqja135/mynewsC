@@ -5,6 +5,9 @@ import { NewsApiService } from '@/services/newsApi';
 import type { NewsArticle, NewsArticleWithScore, SearchMode, NewsAnalysisResponse, SentimentType, LarkConfig } from '@/types/news';
 import styles from './page.module.css';
 import Link from 'next/link';
+import DatePicker from 'react-datepicker';
+import { ko } from 'date-fns/locale';
+import 'react-datepicker/dist/react-datepicker.css';
 
 type ViewMode = 'list' | 'grid';
 type SortOrder = 'desc' | 'asc';
@@ -269,8 +272,8 @@ export default function Home() {
 
   // 날짜 필터
   const [dateFilter, setDateFilter] = useState<string>('all'); // 'all', 'today', 'week', 'month', 'custom'
-  const [customStartDate, setCustomStartDate] = useState<string>('');
-  const [customEndDate, setCustomEndDate] = useState<string>('');
+  const [customStartDate, setCustomStartDate] = useState<Date | null>(null);
+  const [customEndDate, setCustomEndDate] = useState<Date | null>(null);
 
   // 설정 모달
   const [showSettings, setShowSettings] = useState<boolean>(false);
@@ -484,6 +487,18 @@ export default function Home() {
   const clearSearchHistory = () => {
     setSearchHistory([]);
     localStorage.removeItem('searchHistory');
+  };
+
+  const removeFromSearchHistory = (index: number) => {
+    setSearchHistory(prev => {
+      const updated = prev.filter((_, i) => i !== index);
+      if (updated.length > 0) {
+        localStorage.setItem('searchHistory', JSON.stringify(updated));
+      } else {
+        localStorage.removeItem('searchHistory');
+      }
+      return updated;
+    });
   };
 
   const toggleTheme = () => {
@@ -937,7 +952,7 @@ export default function Home() {
       } else if (dateFilter === 'month') {
         startDate = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
       } else if (dateFilter === 'custom' && customStartDate) {
-        startDate = new Date(customStartDate);
+        startDate = new Date(customStartDate.getFullYear(), customStartDate.getMonth(), customStartDate.getDate());
       }
 
       if (startDate) {
@@ -946,8 +961,7 @@ export default function Home() {
           const articleDate = new Date(article.publishedAt);
 
           if (dateFilter === 'custom' && customEndDate) {
-            const endDate = new Date(customEndDate);
-            endDate.setHours(23, 59, 59, 999);
+            const endDate = new Date(customEndDate.getFullYear(), customEndDate.getMonth(), customEndDate.getDate(), 23, 59, 59, 999);
             return articleDate >= startDate && articleDate <= endDate;
           }
 
@@ -1149,18 +1163,29 @@ export default function Home() {
                 </div>
                 <div className={styles.historyList}>
                   {searchHistory.map((item, index) => (
-                    <button
-                      key={index}
-                      type="button"
-                      onClick={() => {
-                        setQuery(item);
-                        setShowHistory(false);
-                      }}
-                      className={styles.historyItem}
-                    >
-                      <span className={styles.historyIcon}>🕐</span>
-                      <span className={styles.historyText}>{item}</span>
-                    </button>
+                    <div key={index} className={styles.historyItem}>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setQuery(item);
+                          setShowHistory(false);
+                        }}
+                        className={styles.historyItemText}
+                      >
+                        <span className={styles.historyText}>{item}</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          removeFromSearchHistory(index);
+                        }}
+                        className={styles.historyDeleteButton}
+                        aria-label="삭제"
+                      >
+                        ✕
+                      </button>
+                    </div>
                   ))}
                 </div>
               </div>
@@ -1271,7 +1296,7 @@ export default function Home() {
           <>
             {/* 날짜 필터 */}
             <div className={styles.dateFilter}>
-              <label className={styles.filterLabel}>📅 기간 필터:</label>
+              <label className={styles.filterLabel}>기간 필터:</label>
               <div className={styles.dateFilterButtons}>
                 <button
                   className={`${styles.dateFilterButton} ${dateFilter === 'all' ? styles.active : ''}`}
@@ -1306,19 +1331,48 @@ export default function Home() {
               </div>
               {dateFilter === 'custom' && (
                 <div className={styles.customDateRange}>
-                  <input
-                    type="date"
-                    value={customStartDate}
-                    onChange={(e) => setCustomStartDate(e.target.value)}
-                    className={styles.dateInput}
-                  />
+                  <div className={styles.dateInputGroup}>
+                    <label className={styles.dateInputLabel}>시작일</label>
+                    <DatePicker
+                      selected={customStartDate}
+                      onChange={(date) => setCustomStartDate(date)}
+                      selectsStart
+                      startDate={customStartDate}
+                      endDate={customEndDate}
+                      maxDate={new Date()}
+                      locale={ko}
+                      dateFormat="yyyy.MM.dd"
+                      placeholderText="날짜 선택"
+                      className={styles.dateInput}
+                      popperPlacement="bottom-start"
+                    />
+                  </div>
                   <span className={styles.dateSeparator}>~</span>
-                  <input
-                    type="date"
-                    value={customEndDate}
-                    onChange={(e) => setCustomEndDate(e.target.value)}
-                    className={styles.dateInput}
-                  />
+                  <div className={styles.dateInputGroup}>
+                    <label className={styles.dateInputLabel}>종료일</label>
+                    <DatePicker
+                      selected={customEndDate}
+                      onChange={(date) => setCustomEndDate(date)}
+                      selectsEnd
+                      startDate={customStartDate}
+                      endDate={customEndDate}
+                      minDate={customStartDate}
+                      maxDate={new Date()}
+                      locale={ko}
+                      dateFormat="yyyy.MM.dd"
+                      placeholderText="날짜 선택"
+                      className={styles.dateInput}
+                      popperPlacement="bottom-start"
+                    />
+                  </div>
+                  {(customStartDate || customEndDate) && (
+                    <button
+                      className={styles.dateResetButton}
+                      onClick={() => { setCustomStartDate(null); setCustomEndDate(null); }}
+                    >
+                      초기화
+                    </button>
+                  )}
                 </div>
               )}
             </div>
@@ -1327,21 +1381,21 @@ export default function Home() {
             {searchTime > 0 && lastSearchMode === searchMode && (
               <div className={styles.performanceInfo}>
                 <div className={styles.perfCard}>
-                  <span className={styles.perfLabel}>⚡ 검색 시간</span>
+                  <span className={styles.perfLabel}>검색 시간</span>
                   <span className={styles.perfValue}>{searchTime.toFixed(2)}초</span>
                 </div>
                 <div className={styles.perfCard}>
-                  <span className={styles.perfLabel}>📊 수집된 기사</span>
+                  <span className={styles.perfLabel}>수집된 기사</span>
                   <span className={styles.perfValue}>{total}개</span>
                 </div>
                 {searchMode === 'semantic' && (
                   <div className={styles.perfCard}>
-                    <span className={styles.perfLabel}>🎯 관련도 필터</span>
+                    <span className={styles.perfLabel}>관련도 필터</span>
                     <span className={styles.perfValue}>{(minSimilarity * 100).toFixed(0)}%+</span>
                   </div>
                 )}
                 <div className={styles.perfCard}>
-                  <span className={styles.perfLabel}>🔍 검색어</span>
+                  <span className={styles.perfLabel}>검색어</span>
                   <span className={styles.perfValue}>&quot;{lastSearchQuery}&quot;</span>
                 </div>
               </div>
@@ -1835,7 +1889,7 @@ export default function Home() {
         <div className={styles.modalOverlay}>
           <div className={styles.modalContent} onClick={(e) => e.stopPropagation()}>
             <div className={styles.modalHeader}>
-              <h2>⚙️ 설정</h2>
+              <h2>설정</h2>
               <button
                 className={styles.modalCloseButton}
                 onClick={() => setShowSettings(false)}
@@ -1866,7 +1920,7 @@ export default function Home() {
                   transition: 'all 0.2s'
                 }}
               >
-                🔍 자동 검색
+                자동 검색
               </button>
               <button
                 onClick={() => setSettingsTab('lark')}
@@ -1883,7 +1937,7 @@ export default function Home() {
                   transition: 'all 0.2s'
                 }}
               >
-                🔔 Lark 알림
+                Lark 알림
               </button>
               <button
                 onClick={() => setSettingsTab('keywords')}
@@ -1900,7 +1954,7 @@ export default function Home() {
                   transition: 'all 0.2s'
                 }}
               >
-                🏷️ 감성 키워드
+                감성 키워드
               </button>
             </div>
 
@@ -2020,7 +2074,7 @@ export default function Home() {
               {/* Lark 알림 설정 탭 */}
               {settingsTab === 'lark' && (
               <div className={styles.settingSection}>
-                <h3 className={styles.sectionTitle}>⚙️ 기본 설정</h3>
+                <h3 className={styles.sectionTitle}>기본 설정</h3>
 
                 <div className={styles.settingItem}>
                   <label className={styles.toggleLabel}>
@@ -2065,7 +2119,7 @@ export default function Home() {
                   </p>
                 </div>
 
-                <h3 className={styles.sectionTitle} style={{ marginTop: '32px' }}>⏰ 알림 주기</h3>
+                <h3 className={styles.sectionTitle} style={{ marginTop: '32px' }}>알림 주기</h3>
 
                 <div className={styles.settingItem}>
                   <label className={styles.settingLabel}>알림 주기</label>
@@ -2111,7 +2165,7 @@ export default function Home() {
                   })()}
                 </div>
 
-                <h3 className={styles.sectionTitle} style={{ marginTop: '32px' }}>🎯 감성 필터</h3>
+                <h3 className={styles.sectionTitle} style={{ marginTop: '32px' }}>감성 필터</h3>
 
                 <div className={styles.settingItem}>
                   <label className={styles.settingLabel}>알림받을 감성 유형</label>
@@ -2131,7 +2185,7 @@ export default function Home() {
                         }}
                       />
                       <span className={styles.sentimentBadge} style={{ backgroundColor: '#ffebee', color: '#f44336', padding: '6px 14px', borderRadius: '16px', fontWeight: 600, fontSize: '14px' }}>
-                        🔴 부정 뉴스
+                        부정 뉴스
                       </span>
                     </label>
                     <label className={styles.checkboxLabel}>
@@ -2149,7 +2203,7 @@ export default function Home() {
                         }}
                       />
                       <span className={styles.sentimentBadge} style={{ backgroundColor: '#e8f5e9', color: '#4caf50', padding: '6px 14px', borderRadius: '16px', fontWeight: 600, fontSize: '14px' }}>
-                        🟢 긍정 뉴스
+                        긍정 뉴스
                       </span>
                     </label>
                     <label className={styles.checkboxLabel}>
@@ -2167,7 +2221,7 @@ export default function Home() {
                         }}
                       />
                       <span className={styles.sentimentBadge} style={{ backgroundColor: '#fff3e0', color: '#ff9800', padding: '6px 14px', borderRadius: '16px', fontWeight: 600, fontSize: '14px' }}>
-                        🟡 중립 뉴스
+                        중립 뉴스
                       </span>
                     </label>
                   </div>
@@ -2194,7 +2248,7 @@ export default function Home() {
                   </p>
                 </div>
 
-                <h3 className={styles.sectionTitle} style={{ marginTop: '32px' }}>🧪 테스트</h3>
+                <h3 className={styles.sectionTitle} style={{ marginTop: '32px' }}>테스트</h3>
 
                 <div className={styles.settingItem}>
                   <button
@@ -2270,7 +2324,7 @@ export default function Home() {
               <div className={styles.settingSection}>
                 {/* 부정 키워드 */}
                 <div className={styles.keywordSection}>
-                  <h4 className={styles.keywordSectionTitle}>🔴 부정 키워드</h4>
+                  <h4 className={styles.keywordSectionTitle}>부정 키워드</h4>
                   <div className={styles.keywordChips}>
                     {customNegativeKeywords.map((kw, i) => (
                       <span key={i} className={`${styles.keywordChip} ${styles.keywordChipNegative}`}>
@@ -2325,7 +2379,7 @@ export default function Home() {
 
                 {/* 긍정 키워드 */}
                 <div className={styles.keywordSection}>
-                  <h4 className={styles.keywordSectionTitle}>🟢 긍정 키워드</h4>
+                  <h4 className={styles.keywordSectionTitle}>긍정 키워드</h4>
                   <div className={styles.keywordChips}>
                     {customPositiveKeywords.map((kw, i) => (
                       <span key={i} className={`${styles.keywordChip} ${styles.keywordChipPositive}`}>

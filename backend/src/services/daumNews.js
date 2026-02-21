@@ -79,40 +79,58 @@ class DaumNewsService {
     const $ = cheerio.load(html);
     const articles = [];
 
-    // Daum news search result items
-    $('ul.list_news > li, div.wrap_cont').each((_, el) => {
+    // Daum news articles are <li> elements with data-docid attribute
+    $('[data-docid]').each((_, el) => {
       try {
         const $el = $(el);
 
-        // Title and URL
-        const $titleLink = $el.find('a.tit_main, a.link_txt, a.tit_g');
-        const title = $titleLink.text().trim();
-        const url = $titleLink.attr('href') || '';
+        // Find title: link to v.daum.net/v/ with text >= 15 chars
+        let title = '';
+        let url = '';
+        let snippet = '';
+        $el.find('a[href*="v.daum.net/v/"]').each((_, a) => {
+          const text = $(a).text().trim();
+          const href = $(a).attr('href') || '';
+          if (!url && text.length >= 10 && text.length < 200) {
+            title = text;
+            url = href;
+          } else if (url && href === url && text.length > title.length) {
+            // Longer text for same URL = snippet
+            snippet = text;
+          }
+        });
 
         if (!title || !url) return;
 
-        // Snippet
-        const snippet = $el.find('p.desc, div.desc, span.txt_info').text().trim() || null;
+        // Source: first link to v.daum.net/channel/
+        let source = 'Daum';
+        const $sourceLink = $el.find('a[href*="v.daum.net/channel"]').first();
+        if ($sourceLink.length > 0) {
+          source = $sourceLink.text().trim() || 'Daum';
+        }
 
-        // Source name
-        const source = $el.find('span.info_cp, a.info_cp, span.txt_cp').text().trim() || 'daum';
-
-        // Date
-        const dateText = $el.find('span.txt_info, span.info_time').filter((_, span) => {
-          const text = $(span).text();
-          return /전|\.|\-|시간|일/.test(text);
-        }).first().text().trim();
+        // Date: span with class txt_info containing date pattern
+        let dateText = '';
+        $el.find('span.txt_info, .gem-subinfo').each((_, span) => {
+          const text = $(span).text().trim();
+          if (/^\d{4}\.\d{2}\.\d{2}$|^\d+분\s*전$|^\d+시간\s*전$|^\d+일\s*전$/.test(text)) {
+            dateText = text;
+            return false;
+          }
+        });
 
         const publishedAt = dateText ? parsePublishedDate(dateText, 'daum') : null;
+
+        if (snippet.length > 300) snippet = snippet.substring(0, 300);
         const articleId = generateNewsId(url, title);
 
         articles.push({
           id: articleId,
           title,
           url,
-          source: source || 'daum',
+          source,
           publishedAt: publishedAt ? publishedAt.toISOString() : null,
-          snippet,
+          snippet: snippet || null,
           thumbnail: null,
         });
       } catch {

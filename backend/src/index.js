@@ -137,10 +137,12 @@ async function fetchFromAllSources(q, hl, gl, num, excludedSources, rssMaxPerFee
     console.log('[DEBUG] Skipping Naver News (excluded)');
   }
 
-  // 3. Daum News - disabled
-  // if (!excludedSources.includes('daum')) {
-  //   tasks.push(daumService.searchNews(q, Math.min(num, 1000)));
-  // }
+  // 3. Daum News
+  if (!excludedSources.includes('daum')) {
+    tasks.push(daumService.searchNews(q, Math.min(num, 1000)));
+  } else {
+    console.log('[DEBUG] Skipping Daum News (excluded)');
+  }
 
   // 4. RSS Feeds - disabled
   // tasks.push(rssParser.searchNews(q, rssMaxPerFeed, excludedSources));
