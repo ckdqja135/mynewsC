@@ -8,7 +8,7 @@ import Link from 'next/link';
 
 export default function LarkSettingsPage() {
   const [larkEnabled, setLarkEnabled] = useState(false);
-  const [larkWebhookUrl, setLarkWebhookUrl] = useState('');
+  const [larkWebhookUrl, setLarkWebhookUrl] = useState(process.env.NEXT_PUBLIC_LARK_WEBHOOK_URL || '');
   const [larkSchedule, setLarkSchedule] = useState('0 9 * * *');
   const [larkCustomSchedule, setLarkCustomSchedule] = useState('');
   const [larkSentimentTypes, setLarkSentimentTypes] = useState<Set<SentimentType>>(
@@ -29,7 +29,6 @@ export default function LarkSettingsPage() {
         const config = await NewsApiService.getLarkSchedule();
         if (config) {
           setLarkEnabled(config.enabled);
-          setLarkWebhookUrl(config.webhookUrl);
           setLarkSchedule(config.schedule);
           setLarkQuery(config.query);
           setLarkSentimentTypes(new Set(config.sentimentTypes));
@@ -147,7 +146,7 @@ export default function LarkSettingsPage() {
                 className={styles.input}
               />
               <p className={styles.helpText}>
-                Lark 봇 설정에서 Webhook URL을 복사하여 입력하세요
+                환경변수(NEXT_PUBLIC_LARK_WEBHOOK_URL)에서 자동으로 불러옵니다
               </p>
             </div>
 

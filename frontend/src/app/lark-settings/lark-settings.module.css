@@ -141,6 +141,17 @@
   line-height: 1.5;
 }
 
+.envValue {
+  padding: 10px 14px;
+  font-size: 13px;
+  font-family: monospace;
+  background: #f1f5f3;
+  color: #64748b;
+  border: 1px dashed #d1d5db;
+  border-radius: 8px;
+  word-break: break-all;
+}
+
 .checkboxGroup {
   display: flex;
   flex-direction: column;
