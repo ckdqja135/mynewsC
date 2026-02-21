@@ -309,7 +309,7 @@ export default function Home() {
 
   // Lark 설정 상태
   const [larkEnabled, setLarkEnabled] = useState(false);
-  const [larkWebhookUrl, setLarkWebhookUrl] = useState('');
+  const [larkWebhookUrl, setLarkWebhookUrl] = useState(process.env.NEXT_PUBLIC_LARK_WEBHOOK_URL || '');
   const [larkScheduleText, setLarkScheduleText] = useState('매일 오전 9시');
   const [larkSentimentTypes, setLarkSentimentTypes] = useState<Set<SentimentType>>(
     new Set(['negative'])
