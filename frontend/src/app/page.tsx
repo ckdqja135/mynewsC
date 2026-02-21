@@ -874,9 +874,9 @@ export default function Home() {
         });
       }
 
-      // 검색 완료 후 항상 AI 분석 + 감성 분류 실행
-      if (responseArticles.length > 0) {
-        console.log(`[Search] ${mode} search completed, automatically running analysis...`);
+      // 시맨틱 검색일 때만 AI 분석 + 감성 분류 자동 실행
+      if (mode === 'semantic' && responseArticles.length > 0) {
+        console.log(`[Search] semantic search completed, automatically running analysis...`);
         performAnalysis(searchQuery, responseArticles);
       }
     } catch (err) {
