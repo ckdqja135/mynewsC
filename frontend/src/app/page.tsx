@@ -1364,7 +1364,7 @@ export default function Home() {
                     <label className={styles.dateInputLabel}>시작일</label>
                     <DatePicker
                       selected={customStartDate}
-                      onChange={(date) => setCustomStartDate(date)}
+                      onChange={(date: Date | null) => setCustomStartDate(date)}
                       selectsStart
                       startDate={customStartDate}
                       endDate={customEndDate}
@@ -1381,7 +1381,7 @@ export default function Home() {
                     <label className={styles.dateInputLabel}>종료일</label>
                     <DatePicker
                       selected={customEndDate}
-                      onChange={(date) => setCustomEndDate(date)}
+                      onChange={(date: Date | null) => setCustomEndDate(date)}
                       selectsEnd
                       startDate={customStartDate}
                       endDate={customEndDate}
