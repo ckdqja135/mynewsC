@@ -1385,7 +1385,7 @@ export default function Home() {
                       selectsEnd
                       startDate={customStartDate}
                       endDate={customEndDate}
-                      minDate={customStartDate}
+                      minDate={customStartDate ?? undefined}
                       maxDate={new Date()}
                       locale={ko}
                       dateFormat="yyyy.MM.dd"
