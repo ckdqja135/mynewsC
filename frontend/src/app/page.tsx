@@ -1832,7 +1832,7 @@ export default function Home() {
 
       {/* 설정 모달 */}
       {showSettings && (
-        <div className={styles.modalOverlay} onClick={() => setShowSettings(false)}>
+        <div className={styles.modalOverlay}>
           <div className={styles.modalContent} onClick={(e) => e.stopPropagation()}>
             <div className={styles.modalHeader}>
               <h2>⚙️ 설정</h2>
