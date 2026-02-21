@@ -10,6 +10,12 @@ class RSSParserService {
       headers: {
         'User-Agent': 'Mozilla/5.0 (compatible; NewsCrawler/1.0)',
       },
+      customFields: {
+        item: [
+          ['media:content', 'media:content', { keepArray: true }],
+          ['media:thumbnail', 'media:thumbnail', { keepArray: true }],
+        ],
+      },
     });
 
     // 한국 RSS 피드 (키워드 필터 없이 전체 수집)
@@ -185,6 +191,9 @@ class RSSParserService {
         description = $.text().trim().slice(0, 500);
       }
 
+      // Extract thumbnail from RSS entry
+      const thumbnail = this._extractThumbnail(entry);
+
       return {
         id: articleId,
         title,
@@ -192,8 +201,60 @@ class RSSParserService {
         source: sourceName,
         publishedAt: publishedAt ? publishedAt.toISOString() : null,
         snippet: description || null,
-        thumbnail: null,
+        thumbnail,
       };
+    } catch {
+      return null;
+    }
+  }
+
+  _extractThumbnail(entry) {
+    try {
+      // 1. media:thumbnail
+      const mediaThumbnail = entry['media:thumbnail'];
+      if (mediaThumbnail) {
+        const item = Array.isArray(mediaThumbnail) ? mediaThumbnail[0] : mediaThumbnail;
+        const url = item?.$ ?.url || item?.url;
+        if (url) return url;
+      }
+
+      // 2. media:content (type이 image인 것)
+      const mediaContent = entry['media:content'];
+      if (mediaContent) {
+        const items = Array.isArray(mediaContent) ? mediaContent : [mediaContent];
+        for (const item of items) {
+          const attrs = item?.$ || item;
+          const medium = attrs?.medium;
+          const type = attrs?.type || '';
+          const url = attrs?.url;
+          if (url && (medium === 'image' || type.startsWith('image/') || /\.(jpg|jpeg|png|gif|webp)/i.test(url))) {
+            return url;
+          }
+        }
+        // media:content가 있지만 type 정보 없으면 첫 번째 URL 사용
+        const firstUrl = (items[0]?.$ || items[0])?.url;
+        if (firstUrl && /\.(jpg|jpeg|png|gif|webp)/i.test(firstUrl)) return firstUrl;
+      }
+
+      // 3. enclosure (type이 image인 것)
+      const enclosure = entry.enclosure;
+      if (enclosure) {
+        const type = enclosure.type || '';
+        const url = enclosure.url;
+        if (url && (type.startsWith('image/') || /\.(jpg|jpeg|png|gif|webp)/i.test(url))) {
+          return url;
+        }
+      }
+
+      // 4. HTML content 안의 <img> 태그에서 추출
+      const htmlContent = entry.content || entry['content:encoded'] || entry.description || '';
+      if (htmlContent && htmlContent.includes('<img')) {
+        const $ = cheerio.load(htmlContent);
+        const imgSrc = $('img').first().attr('src');
+        if (imgSrc && imgSrc.startsWith('http')) return imgSrc;
+      }
+
+      return null;
     } catch {
       return null;
     }
