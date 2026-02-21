@@ -1149,6 +1149,16 @@ export default function Home() {
               className={styles.searchInput}
               disabled={loading}
             />
+            {query && (
+              <button
+                type="button"
+                className={styles.searchClearButton}
+                onClick={() => setQuery('')}
+                aria-label="검색어 초기화"
+              >
+                ✕
+              </button>
+            )}
             {searchHistory.length > 0 && showHistory && (
               <div className={styles.searchHistoryDropdown}>
                 <div className={styles.historyHeader}>
@@ -1198,6 +1208,25 @@ export default function Home() {
           >
             {loading ? '검색 중...' : '검색'}
           </button>
+          {(query || selectedSource || dateFilter !== 'all' || sortOrder !== 'desc' || showBookmarksOnly || sentimentFilter.size < 3 || minSimilarity !== 0.3) && (
+            <button
+              type="button"
+              className={styles.resetFiltersButton}
+              onClick={() => {
+                setQuery('');
+                setSelectedSource(null);
+                setDateFilter('all');
+                setCustomStartDate(null);
+                setCustomEndDate(null);
+                setSortOrder('desc');
+                setShowBookmarksOnly(false);
+                setSentimentFilter(new Set(['positive', 'negative', 'neutral'] as SentimentType[]));
+                setMinSimilarity(0.3);
+              }}
+            >
+              조건 초기화
+            </button>
+          )}
 
           {/* 시맨틱 검색 시 유사도 조절 */}
           {searchMode === 'semantic' && (
@@ -1479,15 +1508,14 @@ export default function Home() {
 
             {sources.length > 1 && (
               <div className={styles.sourceFilterContainer}>
-                <div className={styles.sourceFilterHeader}>
-                  <span className={styles.sourceFilterTitle}>📰 언론사 필터</span>
-                  <button
-                    className={styles.sourceFilterToggle}
-                    onClick={() => setShowSourceFilter(!showSourceFilter)}
-                    aria-label={showSourceFilter ? '필터 접기' : '필터 펼치기'}
-                  >
-                    {showSourceFilter ? '▲ 접기' : '▼ 펼치기'}
-                  </button>
+                <div
+                  className={styles.sourceFilterHeader}
+                  onClick={() => setShowSourceFilter(!showSourceFilter)}
+                  role="button"
+                  aria-label={showSourceFilter ? '필터 접기' : '필터 펼치기'}
+                >
+                  <span className={styles.sourceFilterTitle}>언론사 필터</span>
+                  <span className={styles.sourceFilterArrow}>{showSourceFilter ? '▲' : '▼'}</span>
                 </div>
                 {showSourceFilter && (
                   <div className={styles.sourceFilter}>
