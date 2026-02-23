@@ -101,6 +101,14 @@ function parseSerpApiDatetime(dateStr) {
  * - RFC2822: 'Wed, 29 Jan 2026 10:30:00 GMT'
  * - Relative time: '2시간 전', '2 hours ago'
  */
+function parseDotDate(dateStr) {
+  // YYYY.MM.DD or YYYY.M.D format (네이버/다음에서 사용)
+  const match = dateStr.trim().match(/^(\d{4})\.(\d{1,2})\.(\d{1,2})\.?$/);
+  if (!match) return null;
+  const dt = new Date(parseInt(match[1], 10), parseInt(match[2], 10) - 1, parseInt(match[3], 10));
+  return isNaN(dt.getTime()) ? null : dt;
+}
+
 function parsePublishedDate(dateStr, source = 'google') {
   if (!dateStr) return null;
 
@@ -108,13 +116,12 @@ function parsePublishedDate(dateStr, source = 'google') {
   let result = parseSerpApiDatetime(dateStr);
   if (result) return result;
 
-  // Try relative time (Korean and English)
-  if (source.toLowerCase() === 'naver') {
-    return parseNaverDate(dateStr);
-  }
-
-  // Try Google relative time
+  // Try relative time (Korean and English) - all sources
   result = parseGoogleRelativeTime(dateStr);
+  if (result) return result;
+
+  // Try dot-separated date (YYYY.MM.DD)
+  result = parseDotDate(dateStr);
   if (result) return result;
 
   // Fallback to generic date parse

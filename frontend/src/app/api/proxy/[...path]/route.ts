@@ -27,9 +27,9 @@ async function proxyRequest(
       const body = await request.json();
       fetchOptions.body = JSON.stringify(body);
 
-      // LLM 분석 등 긴 작업용 타임아웃 (3분)
+      // LLM 분석 등 긴 작업용 타임아웃 (5분)
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 180000);
+      const timeoutId = setTimeout(() => controller.abort(), 300000);
       fetchOptions.signal = controller.signal;
 
       const response = await fetch(url, fetchOptions);
@@ -42,10 +42,16 @@ async function proxyRequest(
     const response = await fetch(url, fetchOptions);
     const data = await response.json();
     return NextResponse.json(data, { status: response.status });
-  } catch (error) {
+  } catch (error: any) {
     console.error(`[Proxy ${method} Error]`, error);
+    if (error?.cause) {
+      console.error(`[Proxy ${method} Cause]`, error.cause);
+    }
+    const message = error?.cause?.code === 'UND_ERR_CONNECT_TIMEOUT'
+      ? 'Backend connection timed out'
+      : `Backend request failed: ${String(error)}`;
     return NextResponse.json(
-      { detail: `Backend request failed: ${String(error)}` },
+      { detail: message },
       { status: 502 }
     );
   }

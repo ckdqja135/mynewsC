@@ -110,14 +110,25 @@ class DaumNewsService {
         }
 
         // Date: span with class txt_info containing date pattern
+        const datePattern = /^\d{4}\.\d{1,2}\.\d{1,2}\.?$|^\d+초?\s*전$|^\d+분\s*전$|^\d+시간\s*전$|^\d+일\s*전$|^\d+주\s*전$/;
         let dateText = '';
-        $el.find('span.txt_info, .gem-subinfo').each((_, span) => {
+        $el.find('span.txt_info, .gem-subinfo, [class*="date"], [class*="time"], [class*="info"]').each((_, span) => {
           const text = $(span).text().trim();
-          if (/^\d{4}\.\d{2}\.\d{2}$|^\d+분\s*전$|^\d+시간\s*전$|^\d+일\s*전$/.test(text)) {
+          if (datePattern.test(text)) {
             dateText = text;
             return false;
           }
         });
+        // Fallback: search all spans
+        if (!dateText) {
+          $el.find('span, em').each((_, span) => {
+            const text = $(span).text().trim();
+            if (datePattern.test(text)) {
+              dateText = text;
+              return false;
+            }
+          });
+        }
 
         const publishedAt = dateText ? parsePublishedDate(dateText, 'daum') : null;
 

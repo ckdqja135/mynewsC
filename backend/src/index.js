@@ -391,6 +391,10 @@ app.post('/api/news/semantic-search', async (req, res) => {
 // ==================== News Analysis ====================
 
 app.post('/api/news/analyze', async (req, res) => {
+  // LLM 분석으로 장시간 소요 → 타임아웃 비활성화
+  req.setTimeout(0);
+  res.setTimeout(0);
+
   if (!llmService) {
     return res.status(503).json({
       detail: 'News analysis is not available. LLM service failed to initialize.',
@@ -517,6 +521,10 @@ app.get('/api/news/debug', async (req, res) => {
 
 // LLM 기반 감성 분류
 app.post('/api/news/classify-sentiment', async (req, res) => {
+  // LLM 배치 처리로 장시간 소요 → 타임아웃 비활성화
+  req.setTimeout(0);
+  res.setTimeout(0);
+
   if (!llmService) {
     return res.status(503).json({
       detail: 'LLM service is not available',
@@ -1279,7 +1287,12 @@ app.delete('/api/lark/schedule-config', (req, res) => {
 // ==================== Start Server ====================
 
 const PORT = parseInt(process.env.PORT || '8000', 10);
-app.listen(PORT, () => {
+const server = app.listen(PORT, () => {
   console.log(`News Crawler API running on http://localhost:${PORT}`);
   console.log(`Health check: http://localhost:${PORT}/health`);
 });
+
+// LLM 분석 등 장시간 요청을 위한 서버 타임아웃 설정 (5분)
+server.timeout = 300000;
+server.keepAliveTimeout = 300000;
+server.headersTimeout = 310000;

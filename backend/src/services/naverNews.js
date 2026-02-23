@@ -130,14 +130,26 @@ class NaverNewsService {
         }
 
         // Find date - look for text matching time patterns
+        const datePattern = /^\d+초?\s*전$|^\d+분\s*전$|^\d+시간\s*전$|^\d+일\s*전$|^\d+주\s*전$|^\d+개월\s*전$|^\d{4}\.\d{1,2}\.\d{1,2}\.?$/;
         let dateText = '';
-        $item.find('[class*="text"]').each((_, el) => {
+        // 1차: class에 "text", "time", "date", "info" 포함된 요소 검색
+        $item.find('[class*="text"], [class*="time"], [class*="date"], [class*="info"], [class*="sub"]').each((_, el) => {
           const text = $(el).text().trim();
-          if (/^\d+분\s*전$|^\d+시간\s*전$|^\d+일\s*전$|^\d{4}\.\d{1,2}\.\d{1,2}$/.test(text)) {
+          if (datePattern.test(text)) {
             dateText = text;
             return false;
           }
         });
+        // 2차: 못 찾으면 span, em 등 인라인 요소에서 검색
+        if (!dateText) {
+          $item.find('span, em').each((_, el) => {
+            const text = $(el).text().trim();
+            if (datePattern.test(text)) {
+              dateText = text;
+              return false;
+            }
+          });
+        }
 
         const publishedAt = dateText ? parsePublishedDate(dateText, 'naver') : null;
 

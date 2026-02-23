@@ -85,7 +85,7 @@ export class NewsApiService {
         '/news/analyze',
         params,
         {
-          timeout: 180000, // 3분 (LLM 분석은 시간이 더 걸릴 수 있음)
+          timeout: 300000, // 5분 (LLM 분석은 시간이 더 걸릴 수 있음)
         }
       );
       return response.data;
@@ -121,7 +121,7 @@ export class NewsApiService {
           query,
           sentimentTypes // 감성 타입 필터 추가
         },
-        { timeout: 180000 } // 3분 (개별 기사 분석은 시간이 걸릴 수 있음)
+        { timeout: 300000 } // 5분 (LLM 배치 처리 시간 고려)
       );
       return response.data;
     } catch (error) {
