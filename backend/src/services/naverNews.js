@@ -108,7 +108,10 @@ class NaverNewsService {
     articleLinks.forEach(({ url, title, $link }) => {
       try {
         // Find nearest parent that might contain metadata
-        const $item = $link.closest('[class*="YWTMk"], [class*="item"], div[class*="vertical-layout"]').first();
+        // YWTMk 컨테이너가 전체 기사(제목+소스+날짜+썸네일)를 포함
+        // vertical-layout은 제목만 포함하는 내부 컨테이너이므로 제외
+        const $item = $link.closest('[class*="YWTMk"], [class*="fds-news-item"]').first()
+          || $link.closest('[class*="item"]').first();
 
         // Find source - look for press link in same container
         let source = 'Naver';
@@ -132,24 +135,14 @@ class NaverNewsService {
         // Find date - look for text matching time patterns
         const datePattern = /^\d+초?\s*전$|^\d+분\s*전$|^\d+시간\s*전$|^\d+일\s*전$|^\d+주\s*전$|^\d+개월\s*전$|^\d{4}\.\d{1,2}\.\d{1,2}\.?$/;
         let dateText = '';
-        // 1차: class에 "text", "time", "date", "info" 포함된 요소 검색
-        $item.find('[class*="text"], [class*="time"], [class*="date"], [class*="info"], [class*="sub"]').each((_, el) => {
+        // $item 내에서 날짜 텍스트 검색 (span 우선)
+        $item.find('span').each((_, el) => {
           const text = $(el).text().trim();
           if (datePattern.test(text)) {
             dateText = text;
             return false;
           }
         });
-        // 2차: 못 찾으면 span, em 등 인라인 요소에서 검색
-        if (!dateText) {
-          $item.find('span, em').each((_, el) => {
-            const text = $(el).text().trim();
-            if (datePattern.test(text)) {
-              dateText = text;
-              return false;
-            }
-          });
-        }
 
         const publishedAt = dateText ? parsePublishedDate(dateText, 'naver') : null;
 
@@ -165,11 +158,8 @@ class NaverNewsService {
         if (snippet.length > 300) snippet = snippet.substring(0, 300);
 
         // Find thumbnail image (article image, not publisher logo)
-        // Image is in parent container (sds-comps-base-layout), not in $item itself
         let thumbnail = null;
-        const $articleContainer = $item.parent();
-        const $imgTarget = $articleContainer.length > 0 ? $articleContainer : $item;
-        $imgTarget.find('img[src^="http"]').each((_, el) => {
+        $item.find('img[src^="http"]').each((_, el) => {
           if (thumbnail) return false;
           const src = $(el).attr('src') || '';
           if (src.includes('imgnews') && !src.includes('mimgnews') && !src.includes('office_logo')) {
