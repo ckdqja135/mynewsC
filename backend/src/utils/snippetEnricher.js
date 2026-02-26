@@ -1,7 +1,8 @@
 const cheerio = require('cheerio');
 
-const FETCH_TIMEOUT = 5000;
+const FETCH_TIMEOUT = 4000;
 const MAX_CONCURRENT = 10;
+const MAX_ENRICH = 20; // Only enrich up to this many articles
 
 // Junk descriptions to ignore
 const JUNK_PATTERNS = [
@@ -131,24 +132,21 @@ async function enrichSnippets(articles) {
       return idx;
     }
     return -1;
-  }).filter(i => i >= 0);
+  }).filter(i => i >= 0).slice(0, MAX_ENRICH);
 
   if (needsEnrichment.length === 0) return articles;
 
   console.log(`[ENRICH] Enriching ${needsEnrichment.length}/${articles.length} articles...`);
 
-  // Process in batches
-  for (let i = 0; i < needsEnrichment.length; i += MAX_CONCURRENT) {
-    const batch = needsEnrichment.slice(i, i + MAX_CONCURRENT);
-    const results = await Promise.allSettled(
-      batch.map(idx => fetchSnippetForArticle(articles[idx]))
-    );
+  // Process all in one parallel batch
+  const results = await Promise.allSettled(
+    needsEnrichment.map(idx => fetchSnippetForArticle(articles[idx]))
+  );
 
-    for (let j = 0; j < batch.length; j++) {
-      const idx = batch[j];
-      if (results[j].status === 'fulfilled' && results[j].value) {
-        articles[idx].snippet = results[j].value;
-      }
+  for (let j = 0; j < needsEnrichment.length; j++) {
+    const idx = needsEnrichment[j];
+    if (results[j].status === 'fulfilled' && results[j].value) {
+      articles[idx].snippet = results[j].value;
     }
   }
 
