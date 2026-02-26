@@ -28,6 +28,8 @@ const naverService = new NaverNewsService();
 const { DaumNewsService } = require('./services/daumNews');
 const daumService = new DaumNewsService();
 
+const { enrichSnippets } = require('./utils/snippetEnricher');
+
 // RSS Parser (always available)
 const rssParser = new RSSParserService();
 
@@ -312,6 +314,9 @@ app.post('/api/news/search', async (req, res) => {
     // Limit to requested number of articles
     const limitedArticles = uniqueArticles.slice(0, num);
 
+    // Enrich snippets with real article descriptions
+    await enrichSnippets(limitedArticles);
+
     const response = {
       articles: limitedArticles,
       total: limitedArticles.length,
@@ -339,11 +344,12 @@ app.post('/api/news/semantic-search', async (req, res) => {
   if (params.error) return res.status(400).json({ detail: params.error });
 
   const { q, hl, gl, num, excluded_sources } = params;
-  const minSimilarity = parseFloat(req.body.min_similarity) || 0.0;
+  const rawSimilarity = parseFloat(req.body.min_similarity);
+  const minSimilarity = isNaN(rawSimilarity) ? 0.3 : rawSimilarity;
 
   // Check cache
   const cacheParams = {
-    q, hl, gl, num, min_similarity: minSimilarity,
+    q, hl, gl, min_similarity: minSimilarity,
     excluded_sources: [...excluded_sources].sort().join(','),
   };
   const cached = semanticSearchCache.get(cacheParams);
@@ -353,30 +359,63 @@ app.post('/api/news/semantic-search', async (req, res) => {
   }
 
   try {
-    const allArticles = await fetchFromAllSources(q, hl, gl, num, excluded_sources, 100);
+    // 시맨틱 검색은 소스별 최대치로 수집 후 유사도로 필터링
+    const allArticles = await fetchFromAllSources(q, hl, gl, 1000, excluded_sources, 100);
     console.log(`[DEBUG] Fetched ${allArticles.length} articles total`);
 
     const uniqueArticles = deduplicateAndFilter(allArticles, excluded_sources);
-    console.log(`[DEBUG] After deduplication: ${uniqueArticles.length} unique articles`);
+    const totalCollected = uniqueArticles.length;
+    console.log(`[DEBUG] After deduplication: ${totalCollected} unique articles`);
 
-    // Rank by semantic similarity (no maxResults limit - let num handle it)
-    const rankedResults = embeddingService.rankArticlesBySimilarity(
+    // min_similarity threshold 이상인 것만 반환 (num으로 자르지 않음)
+    const rankedResults = await embeddingService.rankArticlesBySimilarity(
       q, uniqueArticles, minSimilarity, null
     );
 
     console.log(`[DEBUG] After semantic filtering (min_similarity=${minSimilarity}): ${rankedResults.length} articles`);
 
-    // Limit to requested number of articles
-    const limitedResults = rankedResults.slice(0, num);
-
-    const articlesWithScores = limitedResults.map(({ article, score }) => ({
+    let articlesWithScores = rankedResults.map(({ article, score }) => ({
       ...article,
       similarity_score: score,
     }));
 
+    // LLM 리랭킹: min_similarity가 0.5 이상일 때만 적용
+    // (낮은 threshold = 폭넓게 보겠다는 의도이므로 리랭킹으로 줄이지 않음)
+    const RERANK_MIN_SIMILARITY = 0.5;
+    if (llmService && articlesWithScores.length > 0 && minSimilarity >= RERANK_MIN_SIMILARITY) {
+      try {
+        const LLM_RERANK_LIMIT = 200;
+        const RELEVANCE_THRESHOLD = 3;
+        const toRerank = articlesWithScores.slice(0, LLM_RERANK_LIMIT);
+        const remaining = articlesWithScores.slice(LLM_RERANK_LIMIT);
+
+        console.log(`[DEBUG] LLM reranking top ${toRerank.length} articles (min_similarity=${minSimilarity} >= ${RERANK_MIN_SIMILARITY})...`);
+        const reranked = await llmService.rerankArticles(toRerank, q);
+
+        const filtered = reranked
+          .filter(({ relevance_score }) => relevance_score >= RELEVANCE_THRESHOLD)
+          .map(({ article, relevance_score }) => ({
+            ...article,
+            relevance_score,
+          }));
+
+        console.log(`[DEBUG] After LLM reranking: ${filtered.length}/${toRerank.length} passed (threshold=${RELEVANCE_THRESHOLD})`);
+
+        articlesWithScores = [...filtered, ...remaining];
+      } catch (err) {
+        console.warn(`[WARN] LLM reranking failed, using MiniLM results only: ${err.message}`);
+      }
+    } else if (llmService && minSimilarity < RERANK_MIN_SIMILARITY) {
+      console.log(`[DEBUG] Skipping LLM reranking (min_similarity=${minSimilarity} < ${RERANK_MIN_SIMILARITY})`);
+    }
+
+    // Enrich snippets with real article descriptions
+    await enrichSnippets(articlesWithScores);
+
     const response = {
       articles: articlesWithScores,
       total: articlesWithScores.length,
+      total_collected: totalCollected,
       query: q,
     };
 

@@ -806,141 +806,125 @@
 .dateFilter {
   position: relative;
   z-index: 10;
-  margin-bottom: 25px;
-  padding: 20px;
+  margin-bottom: 20px;
+  padding: 12px 16px;
   background: var(--bg-secondary);
-  border-radius: 16px;
+  border-radius: 12px;
   border: 1px solid var(--border-color);
-  box-shadow: 0 4px 12px var(--shadow-md);
+  box-shadow: 0 2px 8px var(--shadow-md);
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 8px 12px;
 }
 
 .filterLabel {
-  display: block;
-  margin-bottom: 12px;
-  font-size: 14px;
+  font-size: 13px;
   font-weight: 700;
-  color: var(--text-primary);
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
+  color: var(--text-secondary);
+  grid-column: 1;
+  grid-row: 1;
 }
 
 .dateFilterButtons {
   display: flex;
-  gap: 8px;
+  gap: 6px;
   flex-wrap: wrap;
-  margin-bottom: 12px;
+  grid-column: 2;
+  grid-row: 1;
 }
 
 .dateFilterButton {
-  padding: 10px 20px;
+  padding: 7px 16px;
   font-size: 14px;
   font-weight: 600;
   background: var(--bg-hover);
   color: var(--text-secondary);
-  border: 2px solid var(--border-color);
-  border-radius: 8px;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
   cursor: pointer;
-  transition: all 0.3s ease;
+  transition: all 0.2s ease;
 }
 
 .dateFilterButton:hover {
-  background: var(--bg-secondary);
   color: var(--text-primary);
   border-color: var(--accent-color);
-  transform: translateY(-2px);
-  box-shadow: 0 4px 12px var(--shadow-md);
 }
 
 .dateFilterButton.active {
   background: var(--accent-gradient);
   color: white;
   border-color: var(--accent-color);
-  box-shadow: 0 4px 12px var(--glow);
+  box-shadow: 0 2px 8px var(--glow);
+}
+
+.perfCards {
+  display: flex;
+  gap: 8px;
+  grid-column: 3;
+  grid-row: 1;
+  justify-self: end;
 }
 
 .customDateRange {
   display: flex;
   align-items: center;
-  gap: 14px;
-  padding: 14px 18px;
-  background: var(--bg-glass);
-  backdrop-filter: blur(10px);
-  border-radius: 12px;
-  border: 1px solid var(--border-color);
-  box-shadow: 0 2px 8px var(--shadow-md);
-  animation: slideDown 0.3s ease-out;
-}
-
-.dateInputGroup {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  flex: 1;
-  min-width: 0;
+  gap: 8px;
+  grid-column: 2;
+  grid-row: 2;
+  margin-top: 4px;
 }
 
 /* react-datepicker 래퍼가 flex 레이아웃을 깨지 않도록 */
-.dateInputGroup :global(.react-datepicker-wrapper) {
-  flex: 1;
-  min-width: 0;
+.customDateRange :global(.react-datepicker-wrapper) {
+  width: auto;
 }
 
-.dateInputGroup :global(.react-datepicker__input-container) {
+.customDateRange :global(.react-datepicker__input-container) {
   display: flex;
 }
 
-.dateInputLabel {
-  font-size: 13px;
-  font-weight: 700;
-  color: var(--accent-color);
-  white-space: nowrap;
-  flex-shrink: 0;
-}
-
 .dateResetButton {
-  padding: 10px 18px;
+  padding: 7px 14px;
   font-size: 13px;
   font-weight: 600;
   color: var(--text-secondary);
   background: var(--bg-hover);
-  border: 2px solid var(--border-color);
-  border-radius: 8px;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
   cursor: pointer;
-  transition: all 0.3s ease;
+  transition: all 0.2s ease;
   white-space: nowrap;
+  margin-left: 8px;
 }
 
 .dateResetButton:hover {
-  color: white;
-  background: var(--accent-gradient);
+  color: var(--text-primary);
   border-color: var(--accent-color);
-  box-shadow: 0 4px 12px var(--glow);
-  transform: translateY(-2px);
 }
 
 .dateInput {
-  width: 100%;
-  padding: 10px 14px;
+  width: 140px;
+  padding: 7px 12px;
   font-size: 14px;
   font-weight: 500;
   font-family: inherit;
-  background: var(--bg-secondary);
+  background: var(--bg-hover);
   color: var(--text-primary);
-  border: 2px solid var(--border-color);
-  border-radius: 8px;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
   cursor: pointer;
   transition: all 0.2s ease;
 }
 
 .dateInput:hover {
   border-color: var(--accent-color);
-  box-shadow: 0 2px 8px var(--shadow);
 }
 
 .dateInput:focus {
   outline: none;
   border-color: var(--accent-color);
-  box-shadow: 0 0 0 4px var(--glow);
+  box-shadow: 0 0 0 2px var(--glow);
 }
 
 .dateInput::placeholder {
@@ -949,25 +933,10 @@
 }
 
 .dateSeparator {
-  font-size: 16px;
-  font-weight: 700;
+  font-size: 14px;
+  font-weight: 600;
   color: var(--text-secondary);
   flex-shrink: 0;
-}
-
-/* 성능 정보 */
-.performanceInfo {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-  gap: 15px;
-  margin-bottom: 25px;
-  padding: 20px;
-  background: var(--bg-glass);
-  backdrop-filter: blur(10px);
-  border-radius: 16px;
-  border: 1px solid var(--border-color);
-  box-shadow: 0 4px 12px var(--shadow-md);
-  animation: slideDown 0.4s ease-out;
 }
 
 @keyframes slideDown {
@@ -983,31 +952,22 @@
 
 .perfCard {
   display: flex;
-  flex-direction: column;
-  gap: 8px;
-  padding: 16px;
-  background: var(--bg-secondary);
-  border-radius: 12px;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 12px;
+  background: var(--bg-hover);
+  border-radius: 6px;
   border: 1px solid var(--border-color);
-  transition: all 0.3s ease;
-}
-
-.perfCard:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 6px 16px var(--shadow-md);
-  border-color: var(--accent-color);
 }
 
 .perfLabel {
-  font-size: 13px;
+  font-size: 12px;
   color: var(--text-secondary);
   font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
 }
 
 .perfValue {
-  font-size: 20px;
+  font-size: 13px;
   font-weight: 800;
   color: var(--accent-color);
 }

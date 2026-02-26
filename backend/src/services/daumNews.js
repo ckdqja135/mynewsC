@@ -133,6 +133,12 @@ class DaumNewsService {
         const publishedAt = dateText ? parsePublishedDate(dateText, 'daum') : null;
 
         if (snippet.length > 300) snippet = snippet.substring(0, 300);
+        // Remove trailing source name and &nbsp;
+        snippet = snippet.replace(/\u00a0/g, ' ').trim();
+        if (source && source !== 'Daum') {
+          const re = new RegExp(`\\s*${source.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*$`);
+          snippet = snippet.replace(re, '').trim();
+        }
         const articleId = generateNewsId(url, title);
 
         articles.push({

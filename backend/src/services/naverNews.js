@@ -156,6 +156,12 @@ class NaverNewsService {
           }
         });
         if (snippet.length > 300) snippet = snippet.substring(0, 300);
+        // Remove trailing source name and &nbsp;
+        snippet = snippet.replace(/\u00a0/g, ' ').trim();
+        if (source && source !== 'Naver') {
+          const re = new RegExp(`\\s*${source.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*$`);
+          snippet = snippet.replace(re, '').trim();
+        }
 
         // Find thumbnail image (article image, not publisher logo)
         let thumbnail = null;

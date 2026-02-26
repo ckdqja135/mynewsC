@@ -129,12 +129,22 @@ class NewsCrawler {
         url,
         source: sourceName,
         publishedAt: publishedAt ? publishedAt.toISOString() : null,
-        snippet: item.contentSnippet || item.content || null,
+        snippet: this._cleanSnippet(item.contentSnippet || item.content || null, sourceName),
         thumbnail: null,
       };
     } catch {
       return null;
     }
+  }
+
+  _cleanSnippet(snippet, source) {
+    if (!snippet) return null;
+    let text = snippet.replace(/\u00a0/g, ' ').trim();
+    if (source) {
+      const re = new RegExp(`\\s*${source.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*$`);
+      text = text.replace(re, '').trim();
+    }
+    return text || null;
   }
 
   /**

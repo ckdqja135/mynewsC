@@ -1325,7 +1325,7 @@ export default function Home() {
           <>
             {/* 날짜 필터 */}
             <div className={styles.dateFilter}>
-              <label className={styles.filterLabel}>기간 필터:</label>
+              <label className={styles.filterLabel}>기간 필터</label>
               <div className={styles.dateFilterButtons}>
                 <button
                   className={`${styles.dateFilterButton} ${dateFilter === 'all' ? styles.active : ''}`}
@@ -1358,42 +1358,48 @@ export default function Home() {
                   직접 선택
                 </button>
               </div>
+              {searchTime > 0 && lastSearchMode === searchMode && (
+                <div className={styles.perfCards}>
+                  <div className={styles.perfCard}>
+                    <span className={styles.perfLabel}>검색 시간</span>
+                    <span className={styles.perfValue}>{searchTime.toFixed(2)}초</span>
+                  </div>
+                  <div className={styles.perfCard}>
+                    <span className={styles.perfLabel}>수집된 기사</span>
+                    <span className={styles.perfValue}>{total}개</span>
+                  </div>
+                </div>
+              )}
               {dateFilter === 'custom' && (
                 <div className={styles.customDateRange}>
-                  <div className={styles.dateInputGroup}>
-                    <label className={styles.dateInputLabel}>시작일</label>
-                    <DatePicker
-                      selected={customStartDate}
-                      onChange={(date: Date | null) => setCustomStartDate(date)}
-                      selectsStart
-                      startDate={customStartDate}
-                      endDate={customEndDate}
-                      maxDate={new Date()}
-                      locale={ko}
-                      dateFormat="yyyy.MM.dd"
-                      placeholderText="날짜 선택"
-                      className={styles.dateInput}
-                      popperPlacement="bottom-start"
-                    />
-                  </div>
+                  <DatePicker
+                    selected={customStartDate}
+                    onChange={(date: Date | null) => setCustomStartDate(date)}
+                    selectsStart
+                    startDate={customStartDate}
+                    endDate={customEndDate}
+                    maxDate={new Date()}
+                    locale={ko}
+                    dateFormat="yyyy.MM.dd"
+                    placeholderText="시작일"
+                    className={styles.dateInput}
+                    popperPlacement="bottom-start"
+                  />
                   <span className={styles.dateSeparator}>~</span>
-                  <div className={styles.dateInputGroup}>
-                    <label className={styles.dateInputLabel}>종료일</label>
-                    <DatePicker
-                      selected={customEndDate}
-                      onChange={(date: Date | null) => setCustomEndDate(date)}
-                      selectsEnd
-                      startDate={customStartDate}
-                      endDate={customEndDate}
-                      minDate={customStartDate ?? undefined}
-                      maxDate={new Date()}
-                      locale={ko}
-                      dateFormat="yyyy.MM.dd"
-                      placeholderText="날짜 선택"
-                      className={styles.dateInput}
-                      popperPlacement="bottom-start"
-                    />
-                  </div>
+                  <DatePicker
+                    selected={customEndDate}
+                    onChange={(date: Date | null) => setCustomEndDate(date)}
+                    selectsEnd
+                    startDate={customStartDate}
+                    endDate={customEndDate}
+                    minDate={customStartDate ?? undefined}
+                    maxDate={new Date()}
+                    locale={ko}
+                    dateFormat="yyyy.MM.dd"
+                    placeholderText="종료일"
+                    className={styles.dateInput}
+                    popperPlacement="bottom-start"
+                  />
                   {(customStartDate || customEndDate) && (
                     <button
                       className={styles.dateResetButton}
@@ -1406,29 +1412,6 @@ export default function Home() {
               )}
             </div>
 
-            {/* 성능 정보 표시 - 현재 검색 모드와 마지막 검색 모드가 일치할 때만 표시 */}
-            {searchTime > 0 && lastSearchMode === searchMode && (
-              <div className={styles.performanceInfo}>
-                <div className={styles.perfCard}>
-                  <span className={styles.perfLabel}>검색 시간</span>
-                  <span className={styles.perfValue}>{searchTime.toFixed(2)}초</span>
-                </div>
-                <div className={styles.perfCard}>
-                  <span className={styles.perfLabel}>수집된 기사</span>
-                  <span className={styles.perfValue}>{total}개</span>
-                </div>
-                {searchMode === 'semantic' && (
-                  <div className={styles.perfCard}>
-                    <span className={styles.perfLabel}>관련도 필터</span>
-                    <span className={styles.perfValue}>{(minSimilarity * 100).toFixed(0)}%+</span>
-                  </div>
-                )}
-                <div className={styles.perfCard}>
-                  <span className={styles.perfLabel}>검색어</span>
-                  <span className={styles.perfValue}>&quot;{lastSearchQuery}&quot;</span>
-                </div>
-              </div>
-            )}
 
             <div className={styles.controls}>
               <div className={styles.resultCount}>

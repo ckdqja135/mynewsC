@@ -300,6 +300,102 @@ Focus on factual, actionable information. Respond ONLY with valid JSON.`;
   }
 
   /**
+   * 기사들의 쿼리 관련도를 LLM으로 리랭킹
+   * @param {Array} articles - 기사 배열 ({title, snippet, ...})
+   * @param {string} query - 검색 쿼리
+   * @param {number} batchSize - 배치 크기
+   * @returns {Promise<Array<{article, relevance_score}>>} 관련도 점수가 포함된 배열
+   */
+  async rerankArticles(articles, query, batchSize = 10) {
+    const results = [];
+
+    console.log(`[LLM Rerank] Reranking ${articles.length} articles for query: "${query}" (${Math.ceil(articles.length / batchSize)} batches)`);
+
+    for (let i = 0; i < articles.length; i += batchSize) {
+      const batch = articles.slice(i, i + batchSize);
+      const batchScores = await this._rerankBatch(batch, query);
+
+      batch.forEach((article, j) => {
+        results.push({ article, relevance_score: batchScores[j] });
+      });
+
+      console.log(`[LLM Rerank] Batch ${Math.floor(i / batchSize) + 1}/${Math.ceil(articles.length / batchSize)} done`);
+    }
+
+    console.log(`[LLM Rerank] Completed. Score distribution: ${JSON.stringify(this._scoreDistribution(results))}`);
+    return results;
+  }
+
+  _scoreDistribution(results) {
+    const dist = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 };
+    results.forEach(r => { dist[r.relevance_score] = (dist[r.relevance_score] || 0) + 1; });
+    return dist;
+  }
+
+  async _rerankBatch(articles, query) {
+    const articlesText = articles.map((a, i) => {
+      const snippet = a.snippet ? ` | 내용: ${a.snippet.slice(0, 150)}` : '';
+      return `${i + 1}. 제목: "${a.title}"${snippet}`;
+    }).join('\n');
+
+    const prompt = `사용자가 "${query}"에 대해 검색했습니다.
+아래 기사들이 이 검색 주제에 실제로 관한 기사인지 판단하고, 관련도 점수를 매겨주세요.
+
+판단 기준:
+- 5점: 검색 주제가 기사의 핵심 주제 (제목과 내용이 모두 해당 주제에 대한 것)
+- 4점: 검색 주제가 기사의 주요 내용 중 하나
+- 3점: 검색 주제와 관련은 있으나 핵심 주제는 아님
+- 2점: 검색 주제가 본문에 언급만 되었을 뿐, 기사의 주제는 다름
+- 1점: 검색 주제와 거의 무관하거나, 의미 없는 기사 (예: "동영상 첨부된 문서")
+
+기사 목록:
+${articlesText}
+
+각 줄에 번호와 점수만 출력하세요 (예: "1. 5"):`;
+
+    const MAX_RETRIES = 3;
+    for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
+      try {
+        const response = await this.client.chat.completions.create({
+          model: this.model,
+          messages: [
+            { role: 'system', content: 'You are a relevance scoring assistant. Score each article\'s relevance to the search query. Respond with number and score (1-5) per line only.' },
+            { role: 'user', content: prompt },
+          ],
+          temperature: 0.1,
+          max_tokens: articles.length * 10,
+        });
+
+        const text = response.choices[0].message.content.trim();
+        const scores = articles.map(() => 3); // default: 중간
+
+        for (const line of text.split('\n')) {
+          const match = line.match(/(\d+)\D*(\d)/);
+          if (match) {
+            const idx = parseInt(match[1]) - 1;
+            const score = Math.min(5, Math.max(1, parseInt(match[2])));
+            if (idx >= 0 && idx < articles.length) {
+              scores[idx] = score;
+            }
+          }
+        }
+
+        return scores;
+      } catch (error) {
+        if (error.message && error.message.includes('429') && attempt < MAX_RETRIES - 1) {
+          const delay = 1000 * (attempt + 1);
+          console.warn(`[LLM Rerank] Rate limited, retrying in ${delay}ms (attempt ${attempt + 1}/${MAX_RETRIES})`);
+          await new Promise(r => setTimeout(r, delay));
+          continue;
+        }
+        console.error(`[LLM Rerank] Batch rerank failed: ${error.message}`);
+        return articles.map(() => 3); // 실패 시 중간값으로 fallback
+      }
+    }
+    return articles.map(() => 3);
+  }
+
+  /**
    * 여러 제목을 한 번의 LLM 호출로 감성 분류 (배치 프롬프트)
    * @param {string[]} titles - 기사 제목 배열
    * @param {string} query - 검색 키워드

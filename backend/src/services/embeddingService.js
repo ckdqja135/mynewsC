@@ -1,200 +1,120 @@
 /**
  * Embedding Service for Semantic Search
  *
- * Uses a simple TF-IDF + cosine similarity approach for Node.js compatibility.
- * This avoids heavy Python-specific dependencies (sentence-transformers, FAISS).
- *
- * For production, consider using an external embedding API (OpenAI, Cohere, etc.)
- * or the @xenova/transformers library for local model inference.
+ * Uses @xenova/transformers MiniLM model for real semantic embeddings.
+ * Model: paraphrase-multilingual-MiniLM-L12-v2 (384-dim, multilingual including Korean)
  */
 
 class EmbeddingService {
   constructor() {
-    // In-memory article cache: articleId -> { text, vector }
+    this._pipeline = null;
+    this._pipelineLoading = null;
+    // articleId -> { text, embedding: number[] }
     this._articleCache = new Map();
-    this._idfCache = new Map();
-    this._vocabulary = new Set();
-    console.log('[EmbeddingService] Initialized with TF-IDF similarity');
+    console.log('[EmbeddingService] Initialized (MiniLM semantic embeddings)');
   }
 
   /**
-   * Tokenize text into terms (supports Korean and English)
+   * Lazy-load the embedding pipeline (with concurrent loading protection)
    */
-  _tokenize(text) {
-    // Simple tokenization: split by non-word characters, convert to lowercase
-    // This handles Korean characters as well since \w in JS doesn't match Korean,
-    // so we use a broader approach
-    return text
-      .toLowerCase()
-      .replace(/[^\p{L}\p{N}\s]/gu, ' ')
-      .split(/\s+/)
-      .filter(t => t.length > 1);
+  async _getEmbeddingPipeline() {
+    if (this._pipeline) return this._pipeline;
+    if (this._pipelineLoading) return this._pipelineLoading;
+
+    this._pipelineLoading = (async () => {
+      console.log('[EmbeddingService] Loading MiniLM embedding model (first time may take a while)...');
+      const { pipeline } = await import('@xenova/transformers');
+      this._pipeline = await pipeline(
+        'feature-extraction',
+        'Xenova/paraphrase-multilingual-MiniLM-L12-v2'
+      );
+      console.log('[EmbeddingService] Embedding model loaded successfully');
+      this._pipelineLoading = null;
+      return this._pipeline;
+    })();
+
+    return this._pipelineLoading;
   }
 
   /**
-   * Calculate term frequency for a document
+   * Generate embedding for a single text
+   * @param {string} text
+   * @returns {Promise<number[]>} 384-dim normalized vector
    */
-  _tf(tokens) {
-    const freq = new Map();
-    for (const token of tokens) {
-      freq.set(token, (freq.get(token) || 0) + 1);
-    }
-    // Normalize by document length
-    const len = tokens.length || 1;
-    for (const [key, val] of freq) {
-      freq.set(key, val / len);
-    }
-    return freq;
+  async _embed(text) {
+    const pipe = await this._getEmbeddingPipeline();
+    const output = await pipe(text, { pooling: 'mean', normalize: true });
+    return Array.from(output.data);
   }
 
   /**
-   * Build/update IDF from all cached documents
+   * Dot product of two normalized vectors (= cosine similarity)
    */
-  _updateIdf() {
-    const docCount = this._articleCache.size || 1;
-    const termDocCount = new Map();
-
-    for (const { tokens } of this._articleCache.values()) {
-      const uniqueTerms = new Set(tokens);
-      for (const term of uniqueTerms) {
-        termDocCount.set(term, (termDocCount.get(term) || 0) + 1);
-      }
+  _dotProduct(a, b) {
+    let sum = 0;
+    for (let i = 0; i < a.length; i++) {
+      sum += a[i] * b[i];
     }
-
-    this._idfCache.clear();
-    for (const [term, count] of termDocCount) {
-      this._idfCache.set(term, Math.log((docCount + 1) / (count + 1)) + 1);
-    }
+    return sum;
   }
 
   /**
-   * Convert TF map to a sparse vector using IDF weights
+   * Add articles to the embedding cache
    */
-  _tfidfVector(tfMap) {
-    const vector = new Map();
-    for (const [term, tf] of tfMap) {
-      const idf = this._idfCache.get(term) || 1;
-      vector.set(term, tf * idf);
-    }
-    return vector;
-  }
+  async addArticlesToIndex(articles) {
+    const newArticles = articles.filter(a => !this._articleCache.has(a.id));
+    if (newArticles.length === 0) return;
 
-  /**
-   * Calculate cosine similarity between two sparse vectors
-   */
-  _cosineSimilarity(vecA, vecB) {
-    let dotProduct = 0;
-    let normA = 0;
-    let normB = 0;
+    console.log(`[EmbeddingService] Embedding ${newArticles.length} new articles...`);
 
-    for (const [term, valA] of vecA) {
-      normA += valA * valA;
-      const valB = vecB.get(term);
-      if (valB !== undefined) {
-        dotProduct += valA * valB;
-      }
+    for (const article of newArticles) {
+      let text = article.title || '';
+      if (article.snippet) text += ' ' + article.snippet;
+
+      const embedding = await this._embed(text);
+      this._articleCache.set(article.id, { text, embedding });
     }
 
-    for (const [, valB] of vecB) {
-      normB += valB * valB;
-    }
-
-    const denominator = Math.sqrt(normA) * Math.sqrt(normB);
-    if (denominator === 0) return 0;
-
-    return dotProduct / denominator;
-  }
-
-  /**
-   * Add articles to the index
-   */
-  addArticlesToIndex(articles) {
-    let newCount = 0;
-    for (const article of articles) {
-      if (!this._articleCache.has(article.id)) {
-        let text = article.title || '';
-        if (article.snippet) text += ' ' + article.snippet;
-
-        const tokens = this._tokenize(text);
-        const tf = this._tf(tokens);
-
-        this._articleCache.set(article.id, { text, tokens, tf });
-        newCount++;
-      }
-    }
-
-    if (newCount > 0) {
-      this._updateIdf();
-      console.log(`[EmbeddingService] Added ${newCount} articles. Total: ${this._articleCache.size}`);
-    }
-  }
-
-  /**
-   * Normalize raw TF-IDF scores to 0~1 range compatible with sentence-transformers scale.
-   * TF-IDF cosine similarity for short texts typically maxes out at 0.2~0.4,
-   * while sentence-transformers returns 0.5~0.9 for relevant content.
-   * We rescale so that the top result maps to ~0.95 and scores distribute naturally.
-   */
-  _normalizeScores(results) {
-    if (results.length === 0) return results;
-
-    const maxScore = results[0].score; // already sorted desc
-    if (maxScore <= 0) return results;
-
-    // Scale so that the max raw score maps to 0.95
-    // Use a power curve for more natural distribution
-    const scaleFactor = 0.95 / maxScore;
-
-    return results.map(({ article, score }) => ({
-      article,
-      score: Math.min(score * scaleFactor, 1.0),
-    }));
+    console.log(`[EmbeddingService] Done. Total cached: ${this._articleCache.size}`);
   }
 
   /**
    * Rank articles by semantic similarity to the query.
+   * @param {string} query
+   * @param {Array} articles - [{id, title, snippet, ...}]
+   * @param {number} minSimilarity - threshold (0~1)
+   * @param {number|null} maxResults
+   * @returns {Promise<Array<{article, score}>>}
    */
-  rankArticlesBySimilarity(query, articles, minSimilarity = 0.0, maxResults = null) {
+  async rankArticlesBySimilarity(query, articles, minSimilarity = 0.0, maxResults = null) {
     if (!articles || articles.length === 0) return [];
 
-    // Add articles to index
-    this.addArticlesToIndex(articles);
+    // Embed all articles (cached ones are skipped)
+    await this.addArticlesToIndex(articles);
 
-    // Update IDF with current corpus
-    this._updateIdf();
+    // Embed query
+    const queryEmbedding = await this._embed(query);
 
-    // Compute query vector
-    const queryTokens = this._tokenize(query);
-    const queryTf = this._tf(queryTokens);
-    const queryVector = this._tfidfVector(queryTf);
-
-    // Score each article (collect ALL results first, filter after normalization)
-    const rawResults = [];
+    // Score each article
+    const results = [];
     for (const article of articles) {
       const cached = this._articleCache.get(article.id);
       if (!cached) continue;
 
-      const articleVector = this._tfidfVector(cached.tf);
-      const similarity = this._cosineSimilarity(queryVector, articleVector);
-
-      rawResults.push({ article, score: Math.max(0, similarity) });
+      const score = this._dotProduct(queryEmbedding, cached.embedding);
+      if (score >= minSimilarity) {
+        results.push({ article, score: Math.max(0, score) });
+      }
     }
 
     // Sort by similarity (highest first)
-    rawResults.sort((a, b) => b.score - a.score);
+    results.sort((a, b) => b.score - a.score);
 
-    // Normalize scores to match sentence-transformers scale (0~1)
-    const normalized = this._normalizeScores(rawResults);
-
-    // Now filter by minSimilarity threshold
-    const filtered = normalized.filter(r => r.score >= minSimilarity);
-
-    // Apply max_results limit
     if (maxResults) {
-      return filtered.slice(0, maxResults);
+      return results.slice(0, maxResults);
     }
 
-    return filtered;
+    return results;
   }
 }
 
