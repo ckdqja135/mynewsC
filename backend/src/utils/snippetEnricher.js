@@ -41,7 +41,11 @@ async function searchDDG(title, source) {
       const url = decodeURIComponent(match[1]);
       if (url.includes('google.com') || url.includes('youtube.com')) return;
 
-      const snippet = $el.find('.result__snippet').text().trim();
+      let snippet = $el.find('.result__snippet').text().trim();
+      // Filter out encoding-broken text
+      if (snippet.includes('\ufffd') || (snippet.match(/[\u0080-\u00ff]/g) || []).length > snippet.length * 0.1) {
+        snippet = '';
+      }
       result = { url, snippet: snippet.length >= 20 ? snippet : null };
       return false;
     });
