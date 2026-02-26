@@ -34,7 +34,6 @@
 
 .analyzeLink:hover {
   background: rgba(255, 255, 255, 0.3);
-  transform: translateY(-2px);
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
 }
 
@@ -401,10 +400,7 @@
   z-index: 1;
 }
 
-.searchForm:hover,
 .searchForm:focus-within {
-  box-shadow: 0 8px 24px var(--shadow-lg);
-  transform: translateY(-2px);
   z-index: 1200;
 }
 
@@ -605,7 +601,6 @@
 }
 
 .searchButton:hover:not(:disabled) {
-  transform: translateY(-2px);
   box-shadow: 0 8px 20px var(--glow);
 }
 
@@ -631,7 +626,6 @@
   color: var(--error-text);
   border-color: var(--error-text);
   background: var(--error-bg);
-  transform: translateY(-2px);
   box-shadow: 0 4px 12px var(--shadow-md);
 }
 
@@ -1020,7 +1014,6 @@
   border-color: #fbbf24;
   background: #fffbeb;
   color: #f59e0b;
-  transform: translateY(-2px);
   box-shadow: 0 4px 12px rgba(251, 191, 36, 0.3);
 }
 
@@ -1224,7 +1217,6 @@
 }
 
 .article:hover {
-  transform: translateY(-4px);
   box-shadow: 0 12px 32px var(--shadow-lg);
   border-color: var(--accent-color);
 }
@@ -1434,7 +1426,6 @@
 .pageButton:hover:not(:disabled) {
   background: var(--bg-hover);
   border-color: var(--accent-color);
-  transform: translateY(-2px);
 }
 
 .pageButton:disabled {
@@ -1966,7 +1957,6 @@
 .cancelButton:hover {
   background: var(--bg-secondary);
   border-color: var(--text-secondary);
-  transform: translateY(-2px);
   box-shadow: 0 4px 12px var(--shadow-md);
 }
 
@@ -1978,7 +1968,6 @@
 }
 
 .saveButton:hover {
-  transform: translateY(-2px);
   box-shadow: 0 8px 20px var(--glow);
 }
 
@@ -2414,7 +2403,6 @@
 }
 
 .trendTag:hover {
-  transform: translateY(-2px);
   box-shadow: 0 4px 12px var(--glow);
   background: var(--accent-color);
   color: white;
@@ -2514,7 +2502,6 @@
 }
 
 .sentimentButton:hover {
-  transform: translateY(-2px);
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
 }
 
@@ -2672,7 +2659,6 @@
 }
 
 .keywordAddButton:hover {
-  transform: translateY(-1px);
   box-shadow: 0 4px 12px var(--glow);
 }
 
@@ -2694,6 +2680,5 @@
   background: var(--bg-secondary);
   border-color: var(--text-secondary);
   color: var(--text-primary);
-  transform: translateY(-1px);
   box-shadow: 0 4px 12px var(--shadow-md);
 }
