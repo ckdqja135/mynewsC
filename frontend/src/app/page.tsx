@@ -229,6 +229,7 @@ export default function Home() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [total, setTotal] = useState(0);
+  const [totalCollected, setTotalCollected] = useState(0);
 
   // 검색 모드 상태 추가
   const [searchMode, setSearchMode] = useState<SearchMode>('keyword');
@@ -268,6 +269,7 @@ export default function Home() {
 
   // 북마크
   const [bookmarkedArticles, setBookmarkedArticles] = useState<Set<string>>(new Set());
+  const [bookmarkedData, setBookmarkedData] = useState<Map<string, NewsArticle>>(new Map());
   const [showBookmarksOnly, setShowBookmarksOnly] = useState<boolean>(false);
 
   // 날짜 필터
@@ -354,22 +356,38 @@ export default function Home() {
     }
 
     // 북마크 로드
-    const savedBookmarks = localStorage.getItem('bookmarkedArticles');
-    if (savedBookmarks) {
+    const savedBookmarkData = localStorage.getItem('bookmarkedData');
+    if (savedBookmarkData) {
       try {
-        const parsed = JSON.parse(savedBookmarks);
-        // 배열이고 모든 요소가 문자열인지 확인
-        if (Array.isArray(parsed) && parsed.every(item => typeof item === 'string')) {
-          setBookmarkedArticles(new Set(parsed));
-        } else {
-          // 잘못된 형식이면 초기화
-          localStorage.removeItem('bookmarkedArticles');
-          setBookmarkedArticles(new Set());
+        const parsed: NewsArticle[] = JSON.parse(savedBookmarkData);
+        if (Array.isArray(parsed)) {
+          const dataMap = new Map<string, NewsArticle>();
+          const idSet = new Set<string>();
+          for (const article of parsed) {
+            if (article.id) {
+              dataMap.set(article.id, article);
+              idSet.add(article.id);
+            }
+          }
+          setBookmarkedData(dataMap);
+          setBookmarkedArticles(idSet);
         }
       } catch (e) {
         console.error('Failed to load bookmarks:', e);
-        localStorage.removeItem('bookmarkedArticles');
-        setBookmarkedArticles(new Set());
+        localStorage.removeItem('bookmarkedData');
+      }
+    } else {
+      // 기존 ID만 저장된 형식 마이그레이션
+      const savedBookmarks = localStorage.getItem('bookmarkedArticles');
+      if (savedBookmarks) {
+        try {
+          const parsed = JSON.parse(savedBookmarks);
+          if (Array.isArray(parsed) && parsed.every((item: unknown) => typeof item === 'string')) {
+            setBookmarkedArticles(new Set(parsed));
+          }
+        } catch (e) {
+          localStorage.removeItem('bookmarkedArticles');
+        }
       }
     }
 
@@ -452,6 +470,8 @@ export default function Home() {
   // 백엔드에서 필터링하므로 프론트엔드 필터링은 불필요
 
   const toggleBookmark = (articleId: string) => {
+    const article = articles.find(a => a.id === articleId);
+
     setBookmarkedArticles(prev => {
       const updated = new Set(prev);
       if (updated.has(articleId)) {
@@ -459,13 +479,25 @@ export default function Home() {
       } else {
         updated.add(articleId);
       }
-      localStorage.setItem('bookmarkedArticles', JSON.stringify(Array.from(updated)));
+      return updated;
+    });
+
+    setBookmarkedData(prev => {
+      const updated = new Map(prev);
+      if (updated.has(articleId)) {
+        updated.delete(articleId);
+      } else if (article) {
+        updated.set(articleId, article);
+      }
+      localStorage.setItem('bookmarkedData', JSON.stringify(Array.from(updated.values())));
       return updated;
     });
   };
 
   const clearBookmarks = () => {
     setBookmarkedArticles(new Set());
+    setBookmarkedData(new Map());
+    localStorage.removeItem('bookmarkedData');
     localStorage.removeItem('bookmarkedArticles');
     setShowBookmarksOnly(false);
   };
@@ -850,6 +882,7 @@ export default function Home() {
         responseTotal = response.total;
         setArticles(response.articles);
         setTotal(response.total);
+        setTotalCollected((response as any).total_collected || 0);
       } else {
         // 키워드 검색
         const response = await NewsApiService.searchNews({
@@ -864,6 +897,7 @@ export default function Home() {
         responseTotal = response.total;
         setArticles(response.articles);
         setTotal(response.total);
+        setTotalCollected(0);
       }
 
       const endTime = performance.now();
@@ -921,14 +955,17 @@ export default function Home() {
   }, [articles]);
 
   const filteredAndSortedArticles = useMemo(() => {
-    let result = [...articles];
+    let result: NewsArticle[];
+
+    if (showBookmarksOnly) {
+      // 북마크 보기: 저장된 전체 북마크 기사 표시
+      result = Array.from(bookmarkedData.values());
+    } else {
+      result = [...articles];
+    }
 
     if (selectedSource) {
       result = result.filter(article => article.source === selectedSource);
-    }
-
-    if (showBookmarksOnly) {
-      result = result.filter(article => bookmarkedArticles.has(article.id));
     }
 
     // 감성 필터링 (기사에 sentiment 필드가 있을 때)
@@ -985,7 +1022,7 @@ export default function Home() {
     });
 
     return result;
-  }, [articles, selectedSource, sortOrder, searchMode, showBookmarksOnly, bookmarkedArticles, dateFilter, customStartDate, customEndDate, sentimentFilter]);
+  }, [articles, selectedSource, sortOrder, searchMode, showBookmarksOnly, bookmarkedArticles, bookmarkedData, dateFilter, customStartDate, customEndDate, sentimentFilter]);
 
   // For list view: infinite scroll
   const infiniteScrollArticles = useMemo(() => {
@@ -1321,7 +1358,7 @@ export default function Home() {
           </div>
         )}
 
-        {total > 0 && (
+        {(total > 0 || showBookmarksOnly) && (
           <>
             {/* 날짜 필터 */}
             <div className={styles.dateFilter}>
@@ -1366,7 +1403,11 @@ export default function Home() {
                   </div>
                   <div className={styles.perfCard}>
                     <span className={styles.perfLabel}>수집된 기사</span>
-                    <span className={styles.perfValue}>{total}개</span>
+                    <span className={styles.perfValue}>
+                      {searchMode === 'semantic' && totalCollected > 0
+                        ? `${totalCollected}개 → ${total}개`
+                        : `${total}개`}
+                    </span>
                   </div>
                 </div>
               )}
@@ -1541,7 +1582,7 @@ export default function Home() {
         )}
 
         {/* 모바일 탭 (시맨틱 검색 시) */}
-        {searchMode === 'semantic' && total > 0 && (
+        {searchMode === 'semantic' && (total > 0 || showBookmarksOnly) && (
           <div className={styles.mobileTabs}>
             <button
               className={`${styles.mobileTab} ${mobileTab === 'results' ? styles.active : ''}`}
@@ -1559,7 +1600,7 @@ export default function Home() {
         )}
 
         {/* 2컬럼 레이아웃 (시맨틱 검색 시) */}
-        <div className={`${searchMode === 'semantic' && total > 0 ? styles.twoColumnLayout : ''} ${mobileTab === 'analysis' ? styles.showAnalysis : ''}`}>
+        <div className={`${searchMode === 'semantic' && (total > 0 || showBookmarksOnly) ? styles.twoColumnLayout : ''} ${mobileTab === 'analysis' ? styles.showAnalysis : ''}`}>
           {/* 검색 결과 영역 */}
           <div className={styles.resultsColumn}>
             <div className={`${styles.articles} ${styles[viewMode]}`}>
@@ -1706,7 +1747,7 @@ export default function Home() {
           </div>
 
           {/* AI 분석 패널 (시맨틱 검색 시) */}
-          {searchMode === 'semantic' && total > 0 && (
+          {searchMode === 'semantic' && (total > 0 || showBookmarksOnly) && (
             <div className={styles.analysisColumn}>
               <div className={styles.analysisPanel}>
                 <div className={styles.analysisPanelHeader}>
