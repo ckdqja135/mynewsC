@@ -333,6 +333,8 @@ export default function Home() {
     if (savedTheme) {
       setTheme(savedTheme);
       document.documentElement.setAttribute('data-theme', savedTheme);
+    } else {
+      document.documentElement.setAttribute('data-theme', 'light');
     }
 
     // 검색 히스토리 로드
