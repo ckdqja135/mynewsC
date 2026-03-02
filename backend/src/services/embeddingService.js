@@ -59,6 +59,55 @@ class EmbeddingService {
   }
 
   /**
+   * Calculate keyword match boost/penalty.
+   * - Query keywords found in title → boost
+   * - Query keywords found in snippet only → smaller boost
+   * - No keyword match at all → penalty
+   *
+   * @param {string} query - search query
+   * @param {string} title - article title
+   * @param {string|null} snippet - article snippet
+   * @returns {number} multiplier (e.g. 1.2 for boost, 0.6 for penalty)
+   */
+  _keywordBoost(query, title, snippet) {
+    const queryTokens = query.toLowerCase().split(/\s+/).filter(t => t.length >= 2);
+    if (queryTokens.length === 0) return 1.0;
+
+    const titleLower = (title || '').toLowerCase();
+    const snippetLower = (snippet || '').toLowerCase();
+
+    // Check full query match first (exact phrase)
+    const queryLower = query.toLowerCase().trim();
+    if (titleLower.includes(queryLower)) {
+      return 1.3; // Strong boost: exact query in title
+    }
+    if (snippetLower.includes(queryLower)) {
+      return 1.15; // Moderate boost: exact query in snippet
+    }
+
+    // Check individual token matches
+    let titleMatches = 0;
+    let snippetMatches = 0;
+    for (const token of queryTokens) {
+      if (titleLower.includes(token)) titleMatches++;
+      else if (snippetLower.includes(token)) snippetMatches++;
+    }
+
+    const totalMatches = titleMatches + snippetMatches;
+    const matchRatio = totalMatches / queryTokens.length;
+
+    if (titleMatches > 0 && matchRatio >= 0.5) {
+      return 1.0 + 0.2 * matchRatio; // Boost proportional to match ratio
+    }
+    if (snippetMatches > 0 && matchRatio >= 0.5) {
+      return 1.0 + 0.1 * matchRatio;
+    }
+
+    // No keyword match at all → penalty
+    return 0.6;
+  }
+
+  /**
    * Add articles to the embedding cache
    */
   async addArticlesToIndex(articles) {
@@ -95,13 +144,16 @@ class EmbeddingService {
     // Embed query
     const queryEmbedding = await this._embed(query);
 
-    // Score each article
+    // Score each article with keyword boosting
     const results = [];
     for (const article of articles) {
       const cached = this._articleCache.get(article.id);
       if (!cached) continue;
 
-      const score = this._dotProduct(queryEmbedding, cached.embedding);
+      const semanticScore = this._dotProduct(queryEmbedding, cached.embedding);
+      const boost = this._keywordBoost(query, article.title, article.snippet);
+      const score = Math.min(1.0, semanticScore * boost); // Cap at 1.0
+
       if (score >= minSimilarity) {
         results.push({ article, score: Math.max(0, score) });
       }

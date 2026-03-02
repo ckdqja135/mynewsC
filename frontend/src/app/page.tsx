@@ -11,6 +11,7 @@ import 'react-datepicker/dist/react-datepicker.css';
 
 type ViewMode = 'list' | 'grid';
 type SortOrder = 'desc' | 'asc';
+type SortType = 'relevance' | 'date';
 type Theme = 'light' | 'dark';
 
 // 언론사 목록
@@ -237,6 +238,7 @@ export default function Home() {
 
   const [viewMode, setViewMode] = useState<ViewMode>('list');
   const [sortOrder, setSortOrder] = useState<SortOrder>('desc');
+  const [sortType, setSortType] = useState<SortType>('relevance');
   const [selectedSource, setSelectedSource] = useState<string | null>(null);
   const [theme, setTheme] = useState<Theme>('light');
   const [itemsPerPage, setItemsPerPage] = useState<number>(20);
@@ -807,6 +809,10 @@ export default function Home() {
 
   const handleSearchModeChange = (mode: SearchMode) => {
     setSearchMode(mode);
+    // 시맨틱 → 키워드 전환 시 sortType 리셋
+    if (mode === 'keyword') {
+      setSortType('relevance');
+    }
 
     // 해당 모드의 캐시된 결과 복원
     if (mode === 'keyword' && keywordSearchCache) {
@@ -1010,13 +1016,13 @@ export default function Home() {
     }
 
     result.sort((a, b) => {
-      if (searchMode === 'semantic') {
-        // 시맨틱 검색: 유사도 점수로 정렬
+      if (searchMode === 'semantic' && sortType === 'relevance') {
+        // 시맨틱 검색 + 관련도순: 유사도 점수로 정렬
         const scoreA = (a as NewsArticleWithScore).similarity_score || 0;
         const scoreB = (b as NewsArticleWithScore).similarity_score || 0;
         return sortOrder === 'desc' ? scoreB - scoreA : scoreA - scoreB;
       } else {
-        // 키워드 검색: 날짜로 정렬
+        // 키워드 검색 또는 시맨틱+날짜순: 날짜로 정렬
         const dateA = a.publishedAt ? new Date(a.publishedAt).getTime() : 0;
         const dateB = b.publishedAt ? new Date(b.publishedAt).getTime() : 0;
         return sortOrder === 'desc' ? dateB - dateA : dateA - dateB;
@@ -1024,7 +1030,7 @@ export default function Home() {
     });
 
     return result;
-  }, [articles, selectedSource, sortOrder, searchMode, showBookmarksOnly, bookmarkedArticles, bookmarkedData, dateFilter, customStartDate, customEndDate, sentimentFilter]);
+  }, [articles, selectedSource, sortOrder, sortType, searchMode, showBookmarksOnly, bookmarkedArticles, bookmarkedData, dateFilter, customStartDate, customEndDate, sentimentFilter]);
 
   // For list view: infinite scroll
   const infiniteScrollArticles = useMemo(() => {
@@ -1045,7 +1051,7 @@ export default function Home() {
   useEffect(() => {
     setDisplayedCount(itemsPerPage);
     setCurrentPage(1);
-  }, [selectedSource, sortOrder, itemsPerPage]);
+  }, [selectedSource, sortOrder, sortType, itemsPerPage]);
 
   // Scroll to top when changing pages in grid view
   useEffect(() => {
@@ -1499,18 +1505,49 @@ export default function Home() {
                 </div>
 
                 <div className={styles.sortButtons}>
-                  <button
-                    className={`${styles.sortButton} ${sortOrder === 'desc' ? styles.active : ''}`}
-                    onClick={() => setSortOrder('desc')}
-                  >
-                    {searchMode === 'semantic' ? '관련도 높은순' : '최신순'}
-                  </button>
-                  <button
-                    className={`${styles.sortButton} ${sortOrder === 'asc' ? styles.active : ''}`}
-                    onClick={() => setSortOrder('asc')}
-                  >
-                    {searchMode === 'semantic' ? '관련도 낮은순' : '오래된순'}
-                  </button>
+                  {searchMode === 'semantic' ? (
+                    <>
+                      <button
+                        className={`${styles.sortButton} ${sortType === 'relevance' && sortOrder === 'desc' ? styles.active : ''}`}
+                        onClick={() => { setSortType('relevance'); setSortOrder('desc'); }}
+                      >
+                        관련도 높은순
+                      </button>
+                      <button
+                        className={`${styles.sortButton} ${sortType === 'relevance' && sortOrder === 'asc' ? styles.active : ''}`}
+                        onClick={() => { setSortType('relevance'); setSortOrder('asc'); }}
+                      >
+                        관련도 낮은순
+                      </button>
+                      <button
+                        className={`${styles.sortButton} ${sortType === 'date' && sortOrder === 'desc' ? styles.active : ''}`}
+                        onClick={() => { setSortType('date'); setSortOrder('desc'); }}
+                      >
+                        최신순
+                      </button>
+                      <button
+                        className={`${styles.sortButton} ${sortType === 'date' && sortOrder === 'asc' ? styles.active : ''}`}
+                        onClick={() => { setSortType('date'); setSortOrder('asc'); }}
+                      >
+                        오래된순
+                      </button>
+                    </>
+                  ) : (
+                    <>
+                      <button
+                        className={`${styles.sortButton} ${sortOrder === 'desc' ? styles.active : ''}`}
+                        onClick={() => setSortOrder('desc')}
+                      >
+                        최신순
+                      </button>
+                      <button
+                        className={`${styles.sortButton} ${sortOrder === 'asc' ? styles.active : ''}`}
+                        onClick={() => setSortOrder('asc')}
+                      >
+                        오래된순
+                      </button>
+                    </>
+                  )}
                 </div>
 
                 <div className={styles.viewButtons}>
