@@ -120,6 +120,49 @@ function validateSearchRequest(body) {
 }
 
 /**
+ * Parse comma-separated query into individual keywords.
+ * Trims whitespace and filters empty strings.
+ * @param {string} q - Comma-separated query string
+ * @returns {string[]} - Array of individual keywords
+ */
+function parseMultiKeywords(q) {
+  return q.split(',').map(k => k.trim()).filter(k => k.length > 0);
+}
+
+/**
+ * Fetch news from all sources for multiple keywords concurrently.
+ * Combines results from all keywords, deduplicates, and sorts by date.
+ * @param {string[]} keywords - Array of keywords
+ * @param {string} hl
+ * @param {string} gl
+ * @param {number} num - Max total articles
+ * @param {Array} excludedSources
+ * @param {number} rssMaxPerFeed
+ * @returns {Promise<Array>}
+ */
+async function fetchFromAllSourcesMulti(keywords, hl, gl, num, excludedSources, rssMaxPerFeed = 100) {
+  if (keywords.length <= 1) {
+    return fetchFromAllSources(keywords[0] || '', hl, gl, num, excludedSources, rssMaxPerFeed);
+  }
+
+  // 각 키워드별로 균등하게 할당 (넉넉히 가져온 후 합쳐서 제한)
+  const perKeywordNum = Math.ceil(num / keywords.length) + 50;
+  const keywordPromises = keywords.map(keyword =>
+    fetchFromAllSources(keyword, hl, gl, perKeywordNum, excludedSources, rssMaxPerFeed)
+  );
+
+  const results = await Promise.allSettled(keywordPromises);
+  const allArticles = [];
+  for (const result of results) {
+    if (result.status === 'fulfilled' && Array.isArray(result.value)) {
+      allArticles.push(...result.value);
+    }
+  }
+
+  return allArticles;
+}
+
+/**
  * Fetch news from all sources concurrently
  */
 async function fetchFromAllSources(q, hl, gl, num, excludedSources, rssMaxPerFeed = 100) {
@@ -303,8 +346,9 @@ app.post('/api/news/search', async (req, res) => {
   }
 
   try {
-    const allArticles = await fetchFromAllSources(q, hl, gl, num, excluded_sources, 100);
-    console.log(`[DEBUG] Keyword search - Fetched ${allArticles.length} articles total`);
+    const keywords = parseMultiKeywords(q);
+    const allArticles = await fetchFromAllSourcesMulti(keywords, hl, gl, num, excluded_sources, 100);
+    console.log(`[DEBUG] Keyword search - Fetched ${allArticles.length} articles total (keywords: ${keywords.join(', ')})`);
 
     const uniqueArticles = deduplicateAndFilter(allArticles, excluded_sources);
     console.log(`[DEBUG] Keyword search - After deduplication: ${uniqueArticles.length} unique articles`);
@@ -360,8 +404,9 @@ app.post('/api/news/semantic-search', async (req, res) => {
 
   try {
     // 시맨틱 검색은 소스별 최대치로 수집 후 유사도로 필터링
-    const allArticles = await fetchFromAllSources(q, hl, gl, 1000, excluded_sources, 100);
-    console.log(`[DEBUG] Fetched ${allArticles.length} articles total`);
+    const keywords = parseMultiKeywords(q);
+    const allArticles = await fetchFromAllSourcesMulti(keywords, hl, gl, 1000, excluded_sources, 100);
+    console.log(`[DEBUG] Fetched ${allArticles.length} articles total (keywords: ${keywords.join(', ')})`);
 
     const uniqueArticles = deduplicateAndFilter(allArticles, excluded_sources);
     const totalCollected = uniqueArticles.length;

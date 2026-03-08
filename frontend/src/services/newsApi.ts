@@ -27,7 +27,9 @@ export class NewsApiService {
   // 키워드 검색 (기존)
   static async searchNews(params: NewsSearchRequest): Promise<NewsSearchResponse> {
     try {
-      const response = await apiClient.post<NewsSearchResponse>('/news/search', params);
+      const response = await apiClient.post<NewsSearchResponse>('/news/search', params, {
+        timeout: 120000, // 2분 (복수 키워드 검색 시 시간 소요)
+      });
       return response.data;
     } catch (error) {
       if (axios.isAxiosError(error)) {
@@ -54,7 +56,9 @@ export class NewsApiService {
   // 시맨틱 검색 (새로 추가)
   static async semanticSearchNews(params: SemanticSearchRequest): Promise<SemanticSearchResponse> {
     try {
-      const response = await apiClient.post<SemanticSearchResponse>('/news/semantic-search', params);
+      const response = await apiClient.post<SemanticSearchResponse>('/news/semantic-search', params, {
+        timeout: 300000, // 5분 (복수 키워드 시 대량 기사 임베딩에 시간 소요)
+      });
       return response.data;
     } catch (error) {
       if (axios.isAxiosError(error)) {

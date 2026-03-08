@@ -141,8 +141,10 @@ class EmbeddingService {
     // Embed all articles (cached ones are skipped)
     await this.addArticlesToIndex(articles);
 
-    // Embed query
-    const queryEmbedding = await this._embed(query);
+    // Support comma-separated multi-keyword queries
+    // Embed each keyword separately and use max similarity per article
+    const keywords = query.split(',').map(k => k.trim()).filter(k => k.length > 0);
+    const queryEmbeddings = await Promise.all(keywords.map(k => this._embed(k)));
 
     // Score each article with keyword boosting
     const results = [];
@@ -150,12 +152,17 @@ class EmbeddingService {
       const cached = this._articleCache.get(article.id);
       if (!cached) continue;
 
-      const semanticScore = this._dotProduct(queryEmbedding, cached.embedding);
-      const boost = this._keywordBoost(query, article.title, article.snippet);
-      const score = Math.min(1.0, semanticScore * boost); // Cap at 1.0
+      // For each keyword embedding, compute score and take the max
+      let bestScore = 0;
+      for (let i = 0; i < queryEmbeddings.length; i++) {
+        const semanticScore = this._dotProduct(queryEmbeddings[i], cached.embedding);
+        const boost = this._keywordBoost(keywords[i], article.title, article.snippet);
+        const score = Math.min(1.0, semanticScore * boost);
+        if (score > bestScore) bestScore = score;
+      }
 
-      if (score >= minSimilarity) {
-        results.push({ article, score: Math.max(0, score) });
+      if (bestScore >= minSimilarity) {
+        results.push({ article, score: Math.max(0, bestScore) });
       }
     }
 
