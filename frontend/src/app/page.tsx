@@ -1441,8 +1441,8 @@ export default function Home() {
 
       <header className={styles.header}>
         <div className={styles.headerContent}>
-          <h1>뉴스 검색</h1>
-          <p>구글 뉴스에서 기사를 검색해보세요</p>
+          <h1>뉴스봇</h1>
+          <p>나의 뉴스 비서</p>
         </div>
       </header>
 
