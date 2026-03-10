@@ -13,6 +13,30 @@ type ViewMode = 'list' | 'grid';
 type SortOrder = 'desc' | 'asc';
 type SortType = 'relevance' | 'date';
 type Theme = 'light' | 'dark';
+type ResultDisplayMode = 'normal' | 'tab';
+
+// 북마크 폴더
+interface BookmarkFolder {
+  id: string;
+  name: string;
+  createdAt: string;
+}
+
+// 검색 탭
+interface SearchTab {
+  id: string;
+  query: string;
+  searchMode: SearchMode;
+  articles: NewsArticle[] | NewsArticleWithScore[];
+  total: number;
+  totalCollected: number;
+  searchTime: number;
+  analysisData: NewsAnalysisResponse | null;
+  sortOrder: SortOrder;
+  sortType: SortType;
+  selectedSource: string | null;
+  createdAt: string;
+}
 
 // 언론사 목록
 const NEWS_SOURCES = [
@@ -274,14 +298,30 @@ export default function Home() {
   const [bookmarkedData, setBookmarkedData] = useState<Map<string, NewsArticle>>(new Map());
   const [showBookmarksOnly, setShowBookmarksOnly] = useState<boolean>(false);
 
+  // 북마크 폴더
+  const [bookmarkFolders, setBookmarkFolders] = useState<BookmarkFolder[]>([]);
+  const [folderArticleMap, setFolderArticleMap] = useState<Record<string, string[]>>({});
+  const [selectedBookmarkFolder, setSelectedBookmarkFolder] = useState<string | null>(null);
+  const [showBookmarkManager, setShowBookmarkManager] = useState<boolean>(false);
+  const [renamingFolderId, setRenamingFolderId] = useState<string | null>(null);
+  const [renamingFolderName, setRenamingFolderName] = useState<string>('');
+  const [newFolderName, setNewFolderName] = useState<string>('');
+  const [folderDropdownArticleId, setFolderDropdownArticleId] = useState<string | null>(null);
+
   // 날짜 필터
   const [dateFilter, setDateFilter] = useState<string>('all'); // 'all', 'today', 'week', 'month', 'custom'
   const [customStartDate, setCustomStartDate] = useState<Date | null>(null);
   const [customEndDate, setCustomEndDate] = useState<Date | null>(null);
 
+  // 탭 모드
+  const [resultDisplayMode, setResultDisplayMode] = useState<ResultDisplayMode>('normal');
+  const [searchTabs, setSearchTabs] = useState<SearchTab[]>([]);
+  const [activeTabId, setActiveTabId] = useState<string | null>(null);
+  const [tabContextMenu, setTabContextMenu] = useState<{ tabId: string; x: number; y: number } | null>(null);
+
   // 설정 모달
   const [showSettings, setShowSettings] = useState<boolean>(false);
-  const [settingsTab, setSettingsTab] = useState<'auto-search' | 'lark' | 'keywords'>('auto-search');
+  const [settingsTab, setSettingsTab] = useState<'auto-search' | 'lark' | 'keywords' | 'display'>('auto-search');
   const [defaultQuery, setDefaultQuery] = useState<string>('');
   const [defaultSearchMode, setDefaultSearchMode] = useState<SearchMode>('keyword');
   const [defaultMinSimilarity, setDefaultMinSimilarity] = useState<number>(0.3);
@@ -395,6 +435,32 @@ export default function Home() {
       }
     }
 
+    // 북마크 폴더 로드
+    const savedFolders = localStorage.getItem('bookmarkFolders');
+    if (savedFolders) {
+      try {
+        const parsed = JSON.parse(savedFolders);
+        if (Array.isArray(parsed)) setBookmarkFolders(parsed);
+      } catch (e) {
+        console.error('Failed to load bookmark folders:', e);
+      }
+    }
+    const savedFolderMap = localStorage.getItem('folderArticleMap');
+    if (savedFolderMap) {
+      try {
+        const parsed = JSON.parse(savedFolderMap);
+        if (typeof parsed === 'object') setFolderArticleMap(parsed);
+      } catch (e) {
+        console.error('Failed to load folder article map:', e);
+      }
+    }
+
+    // 결과 표시 모드 로드
+    const savedDisplayMode = localStorage.getItem('resultDisplayMode') as ResultDisplayMode;
+    if (savedDisplayMode === 'tab' || savedDisplayMode === 'normal') {
+      setResultDisplayMode(savedDisplayMode);
+    }
+
     // 자동 검색 설정 로드
     const savedSettings = localStorage.getItem('autoSearchSettings');
     if (savedSettings) {
@@ -474,7 +540,8 @@ export default function Home() {
   // 백엔드에서 필터링하므로 프론트엔드 필터링은 불필요
 
   const toggleBookmark = (articleId: string) => {
-    const article = articles.find(a => a.id === articleId);
+    const article = articles.find(a => a.id === articleId) || bookmarkedData.get(articleId);
+    const isRemoving = bookmarkedArticles.has(articleId);
 
     setBookmarkedArticles(prev => {
       const updated = new Set(prev);
@@ -496,6 +563,22 @@ export default function Home() {
       localStorage.setItem('bookmarkedData', JSON.stringify(Array.from(updated.values())));
       return updated;
     });
+
+    // 북마크 해제 시 폴더에서도 제거
+    if (isRemoving) {
+      const updatedMap = { ...folderArticleMap };
+      let changed = false;
+      for (const folderId of Object.keys(updatedMap)) {
+        if (updatedMap[folderId].includes(articleId)) {
+          updatedMap[folderId] = updatedMap[folderId].filter(id => id !== articleId);
+          changed = true;
+        }
+      }
+      if (changed) {
+        setFolderArticleMap(updatedMap);
+        localStorage.setItem('folderArticleMap', JSON.stringify(updatedMap));
+      }
+    }
   };
 
   const clearBookmarks = () => {
@@ -504,6 +587,176 @@ export default function Home() {
     localStorage.removeItem('bookmarkedData');
     localStorage.removeItem('bookmarkedArticles');
     setShowBookmarksOnly(false);
+    setFolderArticleMap({});
+    localStorage.removeItem('folderArticleMap');
+  };
+
+  // === 북마크 폴더 관리 함수 ===
+  const saveFolderData = (folders: BookmarkFolder[], map: Record<string, string[]>) => {
+    localStorage.setItem('bookmarkFolders', JSON.stringify(folders));
+    localStorage.setItem('folderArticleMap', JSON.stringify(map));
+  };
+
+  const createFolder = (name: string) => {
+    if (!name.trim()) return;
+    const newFolder: BookmarkFolder = {
+      id: Date.now().toString(),
+      name: name.trim(),
+      createdAt: new Date().toISOString(),
+    };
+    const updatedFolders = [...bookmarkFolders, newFolder];
+    setBookmarkFolders(updatedFolders);
+    const updatedMap = { ...folderArticleMap, [newFolder.id]: [] };
+    setFolderArticleMap(updatedMap);
+    saveFolderData(updatedFolders, updatedMap);
+  };
+
+  const renameFolder = (folderId: string, newName: string) => {
+    if (!newName.trim()) return;
+    const updatedFolders = bookmarkFolders.map(f =>
+      f.id === folderId ? { ...f, name: newName.trim() } : f
+    );
+    setBookmarkFolders(updatedFolders);
+    saveFolderData(updatedFolders, folderArticleMap);
+    setRenamingFolderId(null);
+  };
+
+  const deleteFolder = (folderId: string) => {
+    const updatedFolders = bookmarkFolders.filter(f => f.id !== folderId);
+    const updatedMap = { ...folderArticleMap };
+    delete updatedMap[folderId];
+    setBookmarkFolders(updatedFolders);
+    setFolderArticleMap(updatedMap);
+    saveFolderData(updatedFolders, updatedMap);
+    if (selectedBookmarkFolder === folderId) setSelectedBookmarkFolder(null);
+  };
+
+  const addArticleToFolder = (articleId: string, folderId: string) => {
+    const updatedMap = { ...folderArticleMap };
+    if (!updatedMap[folderId]) updatedMap[folderId] = [];
+    if (!updatedMap[folderId].includes(articleId)) {
+      updatedMap[folderId] = [...updatedMap[folderId], articleId];
+    }
+    setFolderArticleMap(updatedMap);
+    localStorage.setItem('folderArticleMap', JSON.stringify(updatedMap));
+  };
+
+  const removeArticleFromFolder = (articleId: string, folderId: string) => {
+    const updatedMap = { ...folderArticleMap };
+    if (updatedMap[folderId]) {
+      updatedMap[folderId] = updatedMap[folderId].filter(id => id !== articleId);
+    }
+    setFolderArticleMap(updatedMap);
+    localStorage.setItem('folderArticleMap', JSON.stringify(updatedMap));
+  };
+
+  const getArticleFolders = (articleId: string): string[] => {
+    return Object.entries(folderArticleMap)
+      .filter(([, ids]) => ids.includes(articleId))
+      .map(([folderId]) => folderId);
+  };
+
+  // === 탭 관리 함수 ===
+  const createSearchTab = (
+    tabQuery: string,
+    mode: SearchMode,
+    tabArticles: NewsArticle[] | NewsArticleWithScore[],
+    tabTotal: number,
+    tabTotalCollected: number,
+    tabSearchTime: number,
+    tabAnalysisData: NewsAnalysisResponse | null = null
+  ): string => {
+    const newTab: SearchTab = {
+      id: Date.now().toString(),
+      query: tabQuery,
+      searchMode: mode,
+      articles: tabArticles,
+      total: tabTotal,
+      totalCollected: tabTotalCollected,
+      searchTime: tabSearchTime,
+      analysisData: tabAnalysisData,
+      sortOrder: 'desc',
+      sortType: mode === 'semantic' ? 'relevance' : 'relevance',
+      selectedSource: null,
+      createdAt: new Date().toISOString(),
+    };
+    setSearchTabs(prev => [...prev, newTab]);
+    setActiveTabId(newTab.id);
+    return newTab.id;
+  };
+
+  const switchTab = (tabId: string) => {
+    const tab = searchTabs.find(t => t.id === tabId);
+    if (!tab) return;
+    setActiveTabId(tabId);
+    setArticles(tab.articles);
+    setTotal(tab.total);
+    setTotalCollected(tab.totalCollected);
+    setSearchTime(tab.searchTime);
+    setLastSearchQuery(tab.query);
+    setLastSearchMode(tab.searchMode);
+    setSearchMode(tab.searchMode);
+    setQuery(tab.query);
+    setSortOrder(tab.sortOrder);
+    setSortType(tab.sortType);
+    setSelectedSource(tab.selectedSource);
+    setAnalysisData(tab.analysisData);
+    setCurrentPage(1);
+    setDisplayedCount(itemsPerPage);
+  };
+
+  const closeTab = (tabId: string) => {
+    setSearchTabs(prev => {
+      const updated = prev.filter(t => t.id !== tabId);
+      if (activeTabId === tabId) {
+        if (updated.length > 0) {
+          // 가장 가까운 탭 활성화
+          const closedIndex = prev.findIndex(t => t.id === tabId);
+          const newActiveIndex = Math.min(closedIndex, updated.length - 1);
+          const newActive = updated[newActiveIndex];
+          setTimeout(() => switchTab(newActive.id), 0);
+        } else {
+          setActiveTabId(null);
+          setArticles([]);
+          setTotal(0);
+          setTotalCollected(0);
+          setSearchTime(0);
+          setLastSearchQuery('');
+          setLastSearchMode(null);
+          setAnalysisData(null);
+        }
+      }
+      return updated;
+    });
+  };
+
+  const closeOtherTabs = (tabId: string) => {
+    setSearchTabs(prev => prev.filter(t => t.id === tabId));
+    setActiveTabId(tabId);
+  };
+
+  const closeAllTabs = () => {
+    setSearchTabs([]);
+    setActiveTabId(null);
+    setArticles([]);
+    setTotal(0);
+    setTotalCollected(0);
+    setSearchTime(0);
+    setLastSearchQuery('');
+    setLastSearchMode(null);
+    setAnalysisData(null);
+  };
+
+  const updateActiveTabData = (updates: Partial<SearchTab>) => {
+    if (!activeTabId) return;
+    setSearchTabs(prev => prev.map(t =>
+      t.id === activeTabId ? { ...t, ...updates } : t
+    ));
+  };
+
+  const truncateTabTitle = (text: string, maxLen: number = 20): string => {
+    if (text.length <= maxLen) return text;
+    return text.slice(0, maxLen) + '...';
   };
 
   const addToSearchHistory = (searchQuery: string) => {
@@ -604,6 +857,9 @@ export default function Home() {
 
     // 제외할 언론사 저장
     localStorage.setItem('excludedSources', JSON.stringify(Array.from(excludedSources)));
+
+    // 결과 표시 모드 저장
+    localStorage.setItem('resultDisplayMode', resultDisplayMode);
 
     // Lark 설정도 함께 저장
     if (settingsTab === 'lark') {
@@ -785,6 +1041,11 @@ export default function Home() {
         }
         return prev;
       });
+
+      // 탭 모드에서 활성 탭 데이터 업데이트
+      if (resultDisplayMode === 'tab' && activeTabId) {
+        updateActiveTabData({ analysisData: response, articles: classifiedArticles });
+      }
     } catch (err) {
       setAnalysisError(err instanceof Error ? err.message : '뉴스 분석에 실패했습니다');
       setAnalysisData(null);
@@ -931,6 +1192,18 @@ export default function Home() {
         });
       }
 
+      // 탭 모드에서는 새 탭 생성
+      if (resultDisplayMode === 'tab') {
+        createSearchTab(
+          searchQuery,
+          mode,
+          responseArticles,
+          responseTotal,
+          mode === 'semantic' ? ((responseArticles as any).total_collected || 0) : 0,
+          elapsedTime
+        );
+      }
+
       // 시맨틱 검색일 때만 AI 분석 + 감성 분류 자동 실행
       if (mode === 'semantic' && responseArticles.length > 0) {
         console.log(`[Search] semantic search completed, automatically running analysis...`);
@@ -966,8 +1239,13 @@ export default function Home() {
     let result: NewsArticle[];
 
     if (showBookmarksOnly) {
-      // 북마크 보기: 저장된 전체 북마크 기사 표시
-      result = Array.from(bookmarkedData.values());
+      // 북마크 보기: 폴더 필터 적용
+      if (selectedBookmarkFolder) {
+        const folderIds = folderArticleMap[selectedBookmarkFolder] || [];
+        result = Array.from(bookmarkedData.values()).filter(a => folderIds.includes(a.id));
+      } else {
+        result = Array.from(bookmarkedData.values());
+      }
     } else {
       result = [...articles];
     }
@@ -1030,7 +1308,7 @@ export default function Home() {
     });
 
     return result;
-  }, [articles, selectedSource, sortOrder, sortType, searchMode, showBookmarksOnly, bookmarkedArticles, bookmarkedData, dateFilter, customStartDate, customEndDate, sentimentFilter]);
+  }, [articles, selectedSource, sortOrder, sortType, searchMode, showBookmarksOnly, bookmarkedArticles, bookmarkedData, dateFilter, customStartDate, customEndDate, sentimentFilter, selectedBookmarkFolder, folderArticleMap]);
 
   // For list view: infinite scroll
   const infiniteScrollArticles = useMemo(() => {
@@ -1079,7 +1357,7 @@ export default function Home() {
     return () => window.removeEventListener('scroll', handleScroll);
   }, [viewMode, loading, hasMore, itemsPerPage]);
 
-  // Close search history on outside click
+  // Close dropdowns on outside click
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
       if (showHistory) {
@@ -1088,11 +1366,20 @@ export default function Home() {
           setShowHistory(false);
         }
       }
+      if (folderDropdownArticleId) {
+        const target = e.target as HTMLElement;
+        if (!target.closest(`.${styles.bookmarkArea}`)) {
+          setFolderDropdownArticleId(null);
+        }
+      }
+      if (tabContextMenu) {
+        setTabContextMenu(null);
+      }
     };
 
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, [showHistory]);
+  }, [showHistory, folderDropdownArticleId, tabContextMenu]);
 
   const formatDate = (dateStr: string | null) => {
     if (!dateStr) return '날짜 정보 없음';
@@ -1338,6 +1625,99 @@ export default function Home() {
           )}
         </form>
 
+        {/* 북마크 바 - 항상 표시 */}
+        <div className={styles.bookmarkBar}>
+          <button
+            className={`${styles.bookmarkFilterButton} ${showBookmarksOnly ? styles.active : ''}`}
+            onClick={() => {
+              setShowBookmarksOnly(!showBookmarksOnly);
+              if (showBookmarksOnly) setSelectedBookmarkFolder(null);
+            }}
+            title={showBookmarksOnly ? '전체 보기' : '북마크만 보기'}
+          >
+            {showBookmarksOnly ? '⭐ 북마크 필터 ON' : '☆ 북마크만 보기'}
+            {bookmarkedArticles.size > 0 && (
+              <span className={styles.bookmarkCount}>({bookmarkedArticles.size})</span>
+            )}
+          </button>
+          <button
+            className={styles.bookmarkManagerButton}
+            onClick={() => setShowBookmarkManager(true)}
+            title="북마크 관리"
+          >
+            북마크 관리
+          </button>
+        </div>
+
+        {/* 탭 바 (탭 모드일 때) - 검색 바 바로 하단 */}
+        {resultDisplayMode === 'tab' && (
+          <div className={styles.tabBar}>
+            <div className={styles.tabBarScroll}>
+              {searchTabs.filter(tab => tab.searchMode === searchMode).map(tab => (
+                <div
+                  key={tab.id}
+                  className={`${styles.tabItem} ${activeTabId === tab.id ? styles.active : ''}`}
+                  onClick={() => switchTab(tab.id)}
+                  onContextMenu={(e) => {
+                    e.preventDefault();
+                    setTabContextMenu({ tabId: tab.id, x: e.clientX, y: e.clientY });
+                  }}
+                  title={tab.query}
+                >
+                  <span className={styles.tabItemLabel}>
+                    {truncateTabTitle(tab.query)}
+                  </span>
+                  <button
+                    className={styles.tabCloseButton}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      closeTab(tab.id);
+                    }}
+                    title="탭 닫기"
+                  >
+                    ✕
+                  </button>
+                </div>
+              ))}
+            </div>
+            {searchTabs.filter(t => t.searchMode === searchMode).length > 1 && (
+              <button
+                className={styles.tabBarCloseAll}
+                onClick={closeAllTabs}
+                title="모든 탭 닫기"
+              >
+                모두 닫기
+              </button>
+            )}
+          </div>
+        )}
+
+        {/* 탭 컨텍스트 메뉴 */}
+        {tabContextMenu && (
+          <div
+            className={styles.tabContextMenu}
+            style={{ left: tabContextMenu.x, top: tabContextMenu.y }}
+            onClick={() => setTabContextMenu(null)}
+          >
+            <button onClick={() => { closeTab(tabContextMenu.tabId); setTabContextMenu(null); }}>
+              닫기
+            </button>
+            <button onClick={() => { closeOtherTabs(tabContextMenu.tabId); setTabContextMenu(null); }}>
+              다른 탭 모두 닫기
+            </button>
+            <button onClick={() => { closeAllTabs(); setTabContextMenu(null); }}>
+              모든 탭 닫기
+            </button>
+          </div>
+        )}
+
+        {/* 탭 모드 빈 상태 */}
+        {resultDisplayMode === 'tab' && searchTabs.length === 0 && !loading && (
+          <div className={styles.noTabContent}>
+            검색하면 새 탭이 생성됩니다
+          </div>
+        )}
+
         {/* 검색/분석 중 로딩 표시 */}
         {(loading || analysisLoading) && (
           <div className={styles.loadingOverlay}>
@@ -1366,8 +1746,32 @@ export default function Home() {
           </div>
         )}
 
-        {(total > 0 || showBookmarksOnly) && (
+        {(total > 0 || showBookmarksOnly) && (resultDisplayMode === 'normal' || activeTabId) && (
           <>
+            {/* 북마크 폴더 선택 바 */}
+            {showBookmarksOnly && bookmarkFolders.length > 0 && (
+              <div className={styles.bookmarkFolderBar}>
+                <button
+                  className={`${styles.folderPill} ${!selectedBookmarkFolder ? styles.active : ''}`}
+                  onClick={() => setSelectedBookmarkFolder(null)}
+                >
+                  전체
+                </button>
+                {bookmarkFolders.map(folder => (
+                  <button
+                    key={folder.id}
+                    className={`${styles.folderPill} ${selectedBookmarkFolder === folder.id ? styles.active : ''}`}
+                    onClick={() => setSelectedBookmarkFolder(folder.id)}
+                  >
+                    {folder.name}
+                    <span className={styles.folderPillCount}>
+                      ({(folderArticleMap[folder.id] || []).length})
+                    </span>
+                  </button>
+                ))}
+              </div>
+            )}
+
             {/* 날짜 필터 */}
             <div className={styles.dateFilter}>
               <label className={styles.filterLabel}>기간 필터</label>
@@ -1475,17 +1879,6 @@ export default function Home() {
               </div>
 
               <div className={styles.controlButtons}>
-                <button
-                  className={`${styles.bookmarkFilterButton} ${showBookmarksOnly ? styles.active : ''}`}
-                  onClick={() => setShowBookmarksOnly(!showBookmarksOnly)}
-                  title={showBookmarksOnly ? '전체 보기' : '북마크만 보기'}
-                >
-                  {showBookmarksOnly ? '⭐ 북마크 필터 ON' : '☆ 북마크만 보기'}
-                  {bookmarkedArticles.size > 0 && (
-                    <span className={styles.bookmarkCount}>({bookmarkedArticles.size})</span>
-                  )}
-                </button>
-
                 <div className={styles.itemsPerPageSelect}>
                   <select
                     value={itemsPerPage === filteredAndSortedArticles.length ? -1 : itemsPerPage}
@@ -1648,16 +2041,54 @@ export default function Home() {
             const hasSimilarityScore = 'similarity_score' in article && searchMode === 'semantic';
 
             const isBookmarked = bookmarkedArticles.has(article.id);
+            const articleFolders = getArticleFolders(article.id);
 
             return (
               <article key={article.id} className={styles.article}>
-                <button
-                  className={`${styles.bookmarkButton} ${isBookmarked ? styles.bookmarked : ''}`}
-                  onClick={() => toggleBookmark(article.id)}
-                  title={isBookmarked ? '북마크 해제' : '북마크 추가'}
-                >
-                  {isBookmarked ? '⭐' : '☆'}
-                </button>
+                <div className={styles.bookmarkArea}>
+                  <button
+                    className={`${styles.bookmarkButton} ${isBookmarked ? styles.bookmarked : ''}`}
+                    onClick={() => toggleBookmark(article.id)}
+                    title={isBookmarked ? '북마크 해제' : '북마크 추가'}
+                  >
+                    {isBookmarked ? '⭐' : '☆'}
+                  </button>
+                  {isBookmarked && bookmarkFolders.length > 0 && (
+                    <button
+                      className={styles.folderDropdownToggle}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setFolderDropdownArticleId(folderDropdownArticleId === article.id ? null : article.id);
+                      }}
+                      title="폴더에 저장"
+                    >
+                      ▾
+                    </button>
+                  )}
+                  {folderDropdownArticleId === article.id && (
+                    <div className={styles.folderContextMenu}>
+                      {bookmarkFolders.map(folder => {
+                        const isInFolder = articleFolders.includes(folder.id);
+                        return (
+                          <button
+                            key={folder.id}
+                            className={`${styles.folderContextMenuItem} ${isInFolder ? styles.active : ''}`}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              if (isInFolder) {
+                                removeArticleFromFolder(article.id, folder.id);
+                              } else {
+                                addArticleToFolder(article.id, folder.id);
+                              }
+                            }}
+                          >
+                            {isInFolder ? '✓ ' : ''}{folder.name}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
                 {article.thumbnail && (
                   <img
                     src={article.thumbnail}
@@ -2046,6 +2477,23 @@ export default function Home() {
                 }}
               >
                 감성 키워드
+              </button>
+              <button
+                onClick={() => setSettingsTab('display')}
+                style={{
+                  flex: 1,
+                  padding: '16px',
+                  background: settingsTab === 'display' ? 'white' : 'transparent',
+                  border: 'none',
+                  borderBottom: settingsTab === 'display' ? '3px solid #667eea' : 'none',
+                  fontWeight: settingsTab === 'display' ? 600 : 400,
+                  fontSize: '15px',
+                  cursor: 'pointer',
+                  color: settingsTab === 'display' ? '#667eea' : '#666',
+                  transition: 'all 0.2s'
+                }}
+              >
+                모드설정
               </button>
             </div>
 
@@ -2538,6 +2986,50 @@ export default function Home() {
                 </button>
               </div>
               )}
+
+              {/* 표시 설정 탭 */}
+              {settingsTab === 'display' && (
+              <div className={styles.settingSection}>
+                <h3 className={styles.sectionTitle}>모드설정</h3>
+
+                <div className={styles.settingItem}>
+                  <div className={styles.displayModeOptions}>
+                    <label className={styles.displayModeLabel}>
+                      <input
+                        type="radio"
+                        name="displayMode"
+                        value="normal"
+                        checked={resultDisplayMode === 'normal'}
+                        onChange={() => setResultDisplayMode('normal')}
+                        className={styles.radioInput}
+                      />
+                      <div className={styles.displayModeInfo}>
+                        <strong>일반 모드</strong>
+                        <span className={styles.displayModeDesc}>
+                          검색할 때마다 이전 결과를 대체합니다
+                        </span>
+                      </div>
+                    </label>
+                    <label className={styles.displayModeLabel}>
+                      <input
+                        type="radio"
+                        name="displayMode"
+                        value="tab"
+                        checked={resultDisplayMode === 'tab'}
+                        onChange={() => setResultDisplayMode('tab')}
+                        className={styles.radioInput}
+                      />
+                      <div className={styles.displayModeInfo}>
+                        <strong>탭 모드</strong>
+                        <span className={styles.displayModeDesc}>
+                          검색 결과를 크롬 탭처럼 여러 개 열어놓고 전환할 수 있습니다
+                        </span>
+                      </div>
+                    </label>
+                  </div>
+                </div>
+              </div>
+              )}
             </div>
 
             <div className={styles.modalFooter}>
@@ -2553,6 +3045,185 @@ export default function Home() {
               >
                 저장
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 북마크 관리 모달 */}
+      {showBookmarkManager && (
+        <div className={styles.modalOverlay} onClick={() => setShowBookmarkManager(false)}>
+          <div className={styles.modalContent} onClick={(e) => e.stopPropagation()} style={{ maxWidth: '800px' }}>
+            <div className={styles.modalHeader}>
+              <h2>북마크 관리</h2>
+              <button
+                className={styles.modalCloseButton}
+                onClick={() => setShowBookmarkManager(false)}
+                aria-label="닫기"
+              >
+                ✕
+              </button>
+            </div>
+            <div className={styles.modalBody}>
+              <div className={styles.bookmarkManagerLayout}>
+                {/* 폴더 목록 (좌측) */}
+                <div className={styles.folderSidebar}>
+                  <h4 className={styles.folderSidebarTitle}>폴더</h4>
+                  <div className={styles.folderList}>
+                    <button
+                      className={`${styles.folderListItem} ${!selectedBookmarkFolder ? styles.active : ''}`}
+                      onClick={() => setSelectedBookmarkFolder(null)}
+                    >
+                      전체 ({bookmarkedArticles.size})
+                    </button>
+                    {bookmarkFolders.map(folder => (
+                      <div key={folder.id} className={`${styles.folderListItem} ${selectedBookmarkFolder === folder.id ? styles.active : ''}`}>
+                        {renamingFolderId === folder.id ? (
+                          <input
+                            type="text"
+                            value={renamingFolderName}
+                            onChange={(e) => setRenamingFolderName(e.target.value)}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') renameFolder(folder.id, renamingFolderName);
+                              if (e.key === 'Escape') setRenamingFolderId(null);
+                            }}
+                            onBlur={() => renameFolder(folder.id, renamingFolderName)}
+                            autoFocus
+                            className={styles.folderRenameInput}
+                          />
+                        ) : (
+                          <button
+                            className={styles.folderNameButton}
+                            onClick={() => setSelectedBookmarkFolder(folder.id)}
+                          >
+                            {folder.name} ({(folderArticleMap[folder.id] || []).length})
+                          </button>
+                        )}
+                        <div className={styles.folderActions}>
+                          <button
+                            onClick={() => {
+                              setRenamingFolderId(folder.id);
+                              setRenamingFolderName(folder.name);
+                            }}
+                            title="이름 변경"
+                            className={styles.folderActionButton}
+                          >
+                            ✏️
+                          </button>
+                          <button
+                            onClick={() => {
+                              if (confirm(`"${folder.name}" 폴더를 삭제하시겠습니까? 북마크는 삭제되지 않습니다.`)) {
+                                deleteFolder(folder.id);
+                              }
+                            }}
+                            title="폴더 삭제"
+                            className={styles.folderActionButton}
+                          >
+                            🗑️
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                  <div className={styles.addFolderRow}>
+                    <input
+                      type="text"
+                      value={newFolderName}
+                      onChange={(e) => setNewFolderName(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' && newFolderName.trim()) {
+                          createFolder(newFolderName);
+                          setNewFolderName('');
+                        }
+                      }}
+                      placeholder="새 폴더 이름..."
+                      className={styles.addFolderInput}
+                    />
+                    <button
+                      className={styles.addFolderButton}
+                      onClick={() => {
+                        if (newFolderName.trim()) {
+                          createFolder(newFolderName);
+                          setNewFolderName('');
+                        }
+                      }}
+                    >
+                      +
+                    </button>
+                  </div>
+                  {bookmarkedArticles.size > 0 && (
+                    <button
+                      className={styles.clearAllBookmarks}
+                      onClick={() => {
+                        if (confirm('모든 북마크를 삭제하시겠습니까?')) {
+                          clearBookmarks();
+                          setShowBookmarkManager(false);
+                        }
+                      }}
+                    >
+                      전체 북마크 삭제
+                    </button>
+                  )}
+                </div>
+
+                {/* 기사 목록 (우측) */}
+                <div className={styles.folderArticleList}>
+                  {(() => {
+                    let managerArticles: NewsArticle[];
+                    if (selectedBookmarkFolder) {
+                      const ids = folderArticleMap[selectedBookmarkFolder] || [];
+                      managerArticles = ids.map(id => bookmarkedData.get(id)).filter(Boolean) as NewsArticle[];
+                    } else {
+                      managerArticles = Array.from(bookmarkedData.values());
+                    }
+                    if (managerArticles.length === 0) {
+                      return <div className={styles.emptyFolder}>북마크가 없습니다</div>;
+                    }
+                    return managerArticles.map(article => (
+                      <div key={article.id} className={styles.managerArticleItem}>
+                        <div className={styles.managerArticleInfo}>
+                          <a href={article.url} target="_blank" rel="noopener noreferrer" className={styles.managerArticleTitle}>
+                            {article.title}
+                          </a>
+                          <span className={styles.managerArticleMeta}>{article.source}</span>
+                        </div>
+                        <div className={styles.managerArticleActions}>
+                          <select
+                            className={styles.moveFolderSelect}
+                            value=""
+                            onChange={(e) => {
+                              if (e.target.value) {
+                                addArticleToFolder(article.id, e.target.value);
+                              }
+                            }}
+                          >
+                            <option value="">폴더에 추가...</option>
+                            {bookmarkFolders.map(f => (
+                              <option key={f.id} value={f.id}>{f.name}</option>
+                            ))}
+                          </select>
+                          {selectedBookmarkFolder && (
+                            <button
+                              className={styles.removeFromFolderButton}
+                              onClick={() => removeArticleFromFolder(article.id, selectedBookmarkFolder)}
+                              title="폴더에서 제거"
+                            >
+                              폴더에서 제거
+                            </button>
+                          )}
+                          <button
+                            className={styles.removeBookmarkButton}
+                            onClick={() => toggleBookmark(article.id)}
+                            title="북마크 해제"
+                          >
+                            삭제
+                          </button>
+                        </div>
+                      </div>
+                    ));
+                  })()}
+                </div>
+              </div>
             </div>
           </div>
         </div>

@@ -1272,9 +1272,6 @@
 
 /* 북마크 버튼 */
 .bookmarkButton {
-  position: absolute;
-  top: 12px;
-  right: 12px;
   padding: 6px;
   font-size: 16px;
   background: transparent;
@@ -1284,7 +1281,6 @@
   transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
   opacity: 0.3;
   color: #9ca3af;
-  z-index: 10;
 }
 
 .article:hover .bookmarkButton {
@@ -2688,4 +2684,537 @@
   border-color: var(--text-secondary);
   color: var(--text-primary);
   box-shadow: 0 4px 12px var(--shadow-md);
+}
+
+/* === 북마크 바 (항상 표시) === */
+.bookmarkBar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 0;
+}
+
+/* === 북마크 폴더 === */
+.bookmarkManagerButton {
+  padding: 6px 12px;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  background: var(--bg-primary);
+  color: var(--text-secondary);
+  font-size: 13px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+.bookmarkManagerButton:hover {
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+}
+
+.bookmarkFolderBar {
+  display: flex;
+  gap: 8px;
+  padding: 10px 0;
+  overflow-x: auto;
+  flex-wrap: wrap;
+}
+
+.folderPill {
+  padding: 6px 14px;
+  border-radius: 20px;
+  border: 1px solid var(--border-color);
+  background: var(--bg-primary);
+  color: var(--text-secondary);
+  font-size: 13px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all 0.2s;
+}
+.folderPill:hover {
+  border-color: #667eea;
+  color: #667eea;
+}
+.folderPill.active {
+  background: #667eea;
+  color: white;
+  border-color: #667eea;
+}
+.folderPillCount {
+  margin-left: 4px;
+  opacity: 0.7;
+  font-size: 12px;
+}
+
+.bookmarkArea {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.folderDropdownToggle {
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 10px;
+  color: var(--text-tertiary);
+  padding: 2px;
+  opacity: 0;
+  transition: opacity 0.2s;
+}
+.article:hover .folderDropdownToggle {
+  opacity: 1;
+}
+
+.folderContextMenu {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  z-index: 100;
+  min-width: 150px;
+  background: var(--bg-primary);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.15);
+  padding: 4px;
+  display: flex;
+  flex-direction: column;
+}
+
+.folderContextMenuItem {
+  padding: 8px 12px;
+  border: none;
+  background: none;
+  text-align: left;
+  cursor: pointer;
+  font-size: 13px;
+  color: var(--text-primary);
+  border-radius: 6px;
+  transition: background 0.15s;
+}
+.folderContextMenuItem:hover {
+  background: var(--bg-secondary);
+}
+.folderContextMenuItem.active {
+  color: #667eea;
+  font-weight: 600;
+}
+
+/* 북마크 관리 모달 */
+.bookmarkManagerLayout {
+  display: flex;
+  gap: 20px;
+  min-height: 400px;
+}
+
+.folderSidebar {
+  width: 280px;
+  flex-shrink: 0;
+  border-right: 1px solid var(--border-color);
+  padding: 0 20px;
+  display: flex;
+  flex-direction: column;
+}
+
+.folderSidebarTitle {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  margin: 0 0 14px 0;
+  text-align: center;
+}
+
+.folderList {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  flex: 1;
+  overflow-y: auto;
+  width: 100%;
+}
+
+.folderListItem {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 12px;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background 0.15s;
+  border: none;
+  background: none;
+  text-align: left;
+  font-size: 14px;
+  color: var(--text-primary);
+  width: 100%;
+  box-sizing: border-box;
+}
+.folderListItem:hover {
+  background: var(--bg-secondary);
+}
+.folderListItem.active {
+  background: rgba(102, 126, 234, 0.1);
+  color: #667eea;
+  font-weight: 600;
+}
+
+.folderNameButton {
+  background: none;
+  border: none;
+  cursor: pointer;
+  flex: 1;
+  text-align: left;
+  font-size: 14px;
+  color: inherit;
+  padding: 0;
+}
+
+.folderRenameInput {
+  flex: 1;
+  padding: 4px 8px;
+  border: 1px solid #667eea;
+  border-radius: 6px;
+  font-size: 13px;
+  outline: none;
+}
+
+.folderActions {
+  display: flex;
+  gap: 4px;
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+.folderListItem:hover .folderActions {
+  opacity: 1;
+}
+.folderActionButton {
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 14px;
+  padding: 2px 4px;
+  border-radius: 4px;
+  transition: background 0.15s;
+}
+.folderActionButton:hover {
+  background: var(--bg-secondary);
+}
+
+.addFolderRow {
+  display: flex;
+  gap: 6px;
+  margin-top: 14px;
+  width: 100%;
+}
+.addFolderInput {
+  flex: 1;
+  padding: 6px 10px;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  font-size: 13px;
+  outline: none;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+}
+.addFolderInput:focus {
+  border-color: #667eea;
+}
+.addFolderButton {
+  padding: 6px 12px;
+  border: 1px solid #667eea;
+  border-radius: 8px;
+  background: #667eea;
+  color: white;
+  font-size: 16px;
+  cursor: pointer;
+  font-weight: 600;
+  transition: background 0.2s;
+}
+.addFolderButton:hover {
+  background: #5a6fd6;
+}
+
+.clearAllBookmarks {
+  margin-top: 14px;
+  padding: 8px;
+  border: 1px solid #f44336;
+  border-radius: 8px;
+  background: transparent;
+  width: 100%;
+  color: #f44336;
+  font-size: 12px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+.clearAllBookmarks:hover {
+  background: #f44336;
+  color: white;
+}
+
+.folderArticleList {
+  flex: 1;
+  overflow-y: auto;
+  max-height: 500px;
+}
+
+.emptyFolder {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 200px;
+  color: var(--text-tertiary);
+  font-size: 14px;
+}
+
+.managerArticleItem {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border-color);
+  gap: 12px;
+}
+.managerArticleItem:last-child {
+  border-bottom: none;
+}
+
+.managerArticleInfo {
+  flex: 1;
+  min-width: 0;
+}
+.managerArticleTitle {
+  display: block;
+  font-size: 14px;
+  color: var(--text-primary);
+  text-decoration: none;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.managerArticleTitle:hover {
+  color: #667eea;
+}
+.managerArticleMeta {
+  font-size: 12px;
+  color: var(--text-tertiary);
+}
+
+.managerArticleActions {
+  display: flex;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.moveFolderSelect {
+  padding: 4px 8px;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  font-size: 12px;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  cursor: pointer;
+}
+
+.removeFromFolderButton,
+.removeBookmarkButton {
+  padding: 4px 10px;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  background: var(--bg-primary);
+  color: var(--text-secondary);
+  font-size: 12px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+.removeFromFolderButton:hover {
+  border-color: #ff9800;
+  color: #ff9800;
+}
+.removeBookmarkButton:hover {
+  border-color: #f44336;
+  color: #f44336;
+}
+
+/* === 탭 모드 === */
+.tabBar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 0;
+  border-bottom: 2px solid var(--border-color);
+  margin-bottom: 12px;
+}
+
+.tabBarScroll {
+  display: flex;
+  gap: 4px;
+  overflow-x: auto;
+  flex: 1;
+  padding-bottom: 2px;
+}
+.tabBarScroll::-webkit-scrollbar {
+  height: 3px;
+}
+.tabBarScroll::-webkit-scrollbar-thumb {
+  background: var(--border-color);
+  border-radius: 3px;
+}
+
+.tabItem {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 12px;
+  border: 1px solid var(--border-color);
+  border-bottom: none;
+  border-radius: 8px 8px 0 0;
+  background: var(--bg-secondary);
+  cursor: pointer;
+  white-space: nowrap;
+  font-size: 13px;
+  color: var(--text-secondary);
+  transition: all 0.15s;
+  min-width: 0;
+  max-width: 220px;
+}
+.tabItem:hover {
+  background: var(--bg-primary);
+  color: var(--text-primary);
+}
+.tabItem.active {
+  background: var(--bg-primary);
+  color: #667eea;
+  font-weight: 600;
+  border-color: #667eea;
+  border-bottom: 2px solid var(--bg-primary);
+  margin-bottom: -2px;
+}
+
+.tabItemLabel {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tabCloseButton {
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 12px;
+  color: var(--text-tertiary);
+  padding: 2px 4px;
+  border-radius: 4px;
+  flex-shrink: 0;
+  transition: all 0.15s;
+}
+.tabCloseButton:hover {
+  background: rgba(244, 67, 54, 0.1);
+  color: #f44336;
+}
+
+.tabBarCloseAll {
+  padding: 6px 12px;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  background: var(--bg-primary);
+  color: var(--text-tertiary);
+  font-size: 12px;
+  cursor: pointer;
+  white-space: nowrap;
+  flex-shrink: 0;
+  transition: all 0.2s;
+}
+.tabBarCloseAll:hover {
+  border-color: #f44336;
+  color: #f44336;
+}
+
+.tabContextMenu {
+  position: fixed;
+  z-index: 1000;
+  min-width: 160px;
+  background: var(--bg-primary);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.15);
+  padding: 4px;
+  display: flex;
+  flex-direction: column;
+}
+.tabContextMenu button {
+  padding: 8px 12px;
+  border: none;
+  background: none;
+  text-align: left;
+  cursor: pointer;
+  font-size: 13px;
+  color: var(--text-primary);
+  border-radius: 6px;
+  transition: background 0.15s;
+}
+.tabContextMenu button:hover {
+  background: var(--bg-secondary);
+}
+
+.noTabContent {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 60px 20px;
+  color: var(--text-tertiary);
+  font-size: 15px;
+}
+
+/* === 표시 설정 === */
+.displayModeOptions {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.displayModeLabel {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 14px;
+  border: 1px solid var(--border-color);
+  border-radius: 10px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+.displayModeLabel:hover {
+  border-color: #667eea;
+}
+.displayModeLabel input:checked ~ .displayModeInfo {
+  color: #667eea;
+}
+.displayModeInfo {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.displayModeInfo strong {
+  font-size: 15px;
+}
+.displayModeDesc {
+  font-size: 13px;
+  color: var(--text-tertiary);
+}
+
+/* 모바일 대응 */
+@media (max-width: 768px) {
+  .bookmarkManagerLayout {
+    flex-direction: column;
+  }
+  .folderSidebar {
+    width: 100%;
+    border-right: none;
+    border-bottom: 1px solid var(--border-color);
+    padding-right: 0;
+    padding-bottom: 12px;
+  }
+  .tabItem {
+    max-width: 160px;
+  }
 }

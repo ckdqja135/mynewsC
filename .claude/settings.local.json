@@ -14,7 +14,8 @@
       "Bash(node:*)",
       "Bash(npm install:*)",
       "Bash(npx next lint:*)",
-      "Bash(npx tsc:*)"
+      "Bash(npx tsc:*)",
+      "Bash(ls -la \"D:\\\\Project\\\\newsCrawling\\\\backend\\\\data\\\\sentiment\"\" 2>&1 || echo \"Directory does not exist \")"
     ]
   }
 }
