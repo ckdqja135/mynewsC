@@ -1403,16 +1403,25 @@ export default function Home() {
   const highlightText = (text: string, highlight: string) => {
     if (!highlight.trim()) return text;
 
-    const parts = text.split(new RegExp(`(${highlight})`, 'gi'));
+    // 쉼표로 구분된 복수 키워드를 개별적으로 하이라이팅
+    const keywords = highlight.split(',').map(k => k.trim()).filter(k => k.length > 0);
+    if (keywords.length === 0) return text;
+
+    // 특수 regex 문자를 이스케이프
+    const escaped = keywords.map(k => k.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
+    const pattern = new RegExp(`(${escaped.join('|')})`, 'gi');
+
+    const parts = text.split(pattern);
     return (
       <>
-        {parts.map((part, i) =>
-          part.toLowerCase() === highlight.toLowerCase() ? (
+        {parts.map((part, i) => {
+          const isMatch = keywords.some(k => part.toLowerCase() === k.toLowerCase());
+          return isMatch ? (
             <mark key={i} className={styles.highlight}>{part}</mark>
           ) : (
             part
-          )
-        )}
+          );
+        })}
       </>
     );
   };
@@ -1870,6 +1879,23 @@ export default function Home() {
               <div className={styles.resultCount}>
                 총 {filteredAndSortedArticles.length}개의 기사
                 {selectedSource && ` (${selectedSource})`}
+                {/* 복수 키워드 검색 시 키워드별 기사 수 표시 */}
+                {lastSearchQuery.includes(',') && filteredAndSortedArticles.length > 0 && (() => {
+                  const keywordCounts: Record<string, number> = {};
+                  filteredAndSortedArticles.forEach(a => {
+                    const kw = (a as any).matchedKeyword;
+                    if (kw) keywordCounts[kw] = (keywordCounts[kw] || 0) + 1;
+                  });
+                  const entries = Object.entries(keywordCounts);
+                  if (entries.length > 0) {
+                    return (
+                      <span style={{ fontSize: '12px', color: '#888', marginLeft: '8px' }}>
+                        ({entries.map(([kw, count]) => `${kw}: ${count}개`).join(', ')})
+                      </span>
+                    );
+                  }
+                  return null;
+                })()}
                 <span className={styles.pageInfo}>
                   {viewMode === 'list'
                     ? ` · ${displayedArticles.length}개 표시 중`
@@ -2129,6 +2155,23 @@ export default function Home() {
                         }
                       >
                         {(articleWithScore.similarity_score * 100).toFixed(0)}% 일치
+                      </span>
+                    </div>
+                  )}
+                  {/* 매칭된 키워드 배지 (복수 키워드 검색 시) */}
+                  {article.matchedKeyword && lastSearchQuery.includes(',') && (
+                    <div style={{ marginBottom: '4px' }}>
+                      <span style={{
+                        display: 'inline-block',
+                        padding: '2px 8px',
+                        borderRadius: '10px',
+                        fontSize: '11px',
+                        fontWeight: 600,
+                        backgroundColor: '#e3f2fd',
+                        color: '#1565c0',
+                        border: '1px solid #90caf9',
+                      }}>
+                        {article.matchedKeyword}
                       </span>
                     </div>
                   )}

@@ -142,7 +142,11 @@ function parseMultiKeywords(q) {
  */
 async function fetchFromAllSourcesMulti(keywords, hl, gl, num, excludedSources, rssMaxPerFeed = 100) {
   if (keywords.length <= 1) {
-    return fetchFromAllSources(keywords[0] || '', hl, gl, num, excludedSources, rssMaxPerFeed);
+    const articles = await fetchFromAllSources(keywords[0] || '', hl, gl, num, excludedSources, rssMaxPerFeed);
+    if (keywords[0]) {
+      articles.forEach(a => { a.matchedKeyword = keywords[0]; });
+    }
+    return articles;
   }
 
   // 각 키워드별로 균등하게 할당 (넉넉히 가져온 후 합쳐서 제한)
@@ -153,9 +157,17 @@ async function fetchFromAllSourcesMulti(keywords, hl, gl, num, excludedSources, 
 
   const results = await Promise.allSettled(keywordPromises);
   const allArticles = [];
-  for (const result of results) {
+  for (let i = 0; i < results.length; i++) {
+    const result = results[i];
     if (result.status === 'fulfilled' && Array.isArray(result.value)) {
+      // 각 기사에 매칭된 키워드 태깅
+      result.value.forEach(article => {
+        article.matchedKeyword = keywords[i];
+      });
+      console.log(`[DEBUG] Keyword "${keywords[i]}" returned ${result.value.length} articles`);
       allArticles.push(...result.value);
+    } else if (result.status === 'rejected') {
+      console.error(`[DEBUG] Keyword "${keywords[i]}" search failed:`, result.reason);
     }
   }
 

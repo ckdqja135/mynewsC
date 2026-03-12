@@ -6,6 +6,7 @@ export interface NewsArticle {
   publishedAt: string | null;
   snippet: string | null;
   thumbnail: string | null;
+  matchedKeyword?: string;
 }
 
 export interface NewsArticleWithScore extends NewsArticle {
