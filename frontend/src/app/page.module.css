@@ -52,8 +52,9 @@
 
 .rightSectionBody {
   display: flex;
-  flex-direction: column;
-  gap: 8px;
+  flex-direction: row;
+  flex-wrap: wrap;
+  gap: 6px;
 }
 
 /* 우측 패널에서 언론사 필터는 최대 높이 제한 후 스크롤 */
@@ -154,24 +155,167 @@
   padding: 6px 8px;
 }
 
+/* 모바일 필터 토글 버튼 - 데스크탑 숨김 */
+.mobileFilterToggle {
+  display: none;
+}
+
+.mobileFilterBadge {
+  display: none;
+}
+
+/* 모바일 드로어 헤더 - 데스크탑 숨김 */
+.mobileFilterHeader {
+  display: none;
+}
+
+.mobileFilterTitle {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.mobileFilterClose {
+  background: none;
+  border: none;
+  font-size: 18px;
+  cursor: pointer;
+  color: var(--text-secondary);
+  padding: 4px 8px;
+  border-radius: 6px;
+}
+
+.mobileFilterClose:hover {
+  background: var(--bg-hover);
+}
+
+/* 오버레이 - 모바일 전용 (데스크탑 숨김) */
+.mobileFilterOverlay {
+  display: none;
+}
+
+/* 드래그 핸들 - 데스크탑 숨김 */
+.sheetHandle {
+  display: none;
+}
+
 /* 모바일 */
 @media (max-width: 900px) {
   .contentLayout {
     flex-direction: column;
+    align-items: stretch;
   }
 
+  /* 필터 토글 버튼 */
+  .mobileFilterToggle {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 8px 16px;
+    margin-bottom: 12px;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-color);
+    border-radius: 20px;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-secondary);
+    cursor: pointer;
+    position: relative;
+    width: fit-content;
+    transition: all 0.2s ease;
+  }
+
+  .mobileFilterToggle:hover {
+    border-color: var(--accent-color);
+    color: var(--accent-color);
+  }
+
+  .mobileFilterToggleOpen {
+    border-color: var(--accent-color);
+    color: var(--accent-color);
+    background: color-mix(in srgb, var(--accent-color) 8%, var(--bg-secondary));
+  }
+
+  .mobileFilterBadge {
+    display: block;
+    position: absolute;
+    top: 4px;
+    right: 4px;
+    width: 8px;
+    height: 8px;
+    background: var(--accent-color);
+    border-radius: 50%;
+  }
+
+  /* 오버레이 */
+  .mobileFilterOverlay {
+    display: block;
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.45);
+    z-index: 399;
+  }
+
+  /* 드래그 핸들 */
+  .sheetHandle {
+    display: block;
+    width: 32px;
+    height: 3px;
+    background: var(--border-color);
+    border-radius: 2px;
+    margin: 4px auto 16px;
+    flex-shrink: 0;
+    cursor: grab;
+    padding: 12px 40px;
+    box-sizing: content-box;
+    margin: -12px auto 4px;
+  }
+
+  /* rightPanel: 모바일 기본 — 숨김 */
   .rightPanel {
-    width: 100%;
-    position: static;
-    max-height: none;
-    flex-direction: row;
-    flex-wrap: wrap;
-    overflow-y: visible;
+    display: none;
+    position: fixed;
+    top: auto;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    z-index: 400;
+    height: 40vh;
+    overflow-y: auto;
+    padding: 12px 20px 88px;
+    background: var(--bg-primary);
+    border-radius: 20px 20px 0 0;
+    box-shadow: 0 -4px 32px var(--shadow-lg);
+    flex-direction: column;
+    gap: 12px;
+    width: auto;
+  }
+
+  /* 열린 상태: 슬라이드 업 */
+  .rightPanel.mobileFilterOpen {
+    display: flex;
+    animation: sheetSlideUp 0.3s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+  }
+
+  /* 닫히는 상태: 슬라이드 다운 */
+  .rightPanel.mobileFilterClosing {
+    display: flex;
+    animation: sheetSlideDown 0.3s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+  }
+
+  /* 바텀 시트 헤더 */
+  .mobileFilterHeader {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding-bottom: 12px;
+    border-bottom: 1px solid var(--border-color);
+    margin-bottom: 4px;
   }
 
   .rightSection {
-    flex: 1;
-    min-width: 200px;
+    width: 100%;
+    min-width: 0;
   }
 }
 
@@ -230,6 +374,26 @@
   .compactModeButton {
     padding: 10px 12px;
   }
+}
+
+/* 시맨틱 옵션 래퍼 (유사도 + 감성 묶음) */
+.semanticOptions {
+  display: contents; /* 데스크탑: 자식들이 flex 부모의 직접 자식처럼 동작 */
+}
+
+/* 유사도 헤더 (label + value) - 데스크탑: flex 부모에 투명하게 녹아듦 */
+.similarityHeader {
+  display: contents;
+}
+
+/* 슬라이더 힌트 (전체 ↔ 엄격) - 데스크탑에서는 숨김 */
+.sliderHints {
+  display: none;
+}
+
+/* 감성 이모지 - 데스크탑에서는 숨김 */
+.sentimentEmoji {
+  display: none;
 }
 
 /* 시맨틱 검색 유사도 설정 (컴팩트 버전) */
@@ -388,6 +552,15 @@
   white-space: nowrap;
 }
 
+/* 배지 행 (감성 + 유사도 + 키워드 한 줄) */
+.badgeRow {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+
 /* 유사도 점수 배지 */
 .similarityBadge {
   margin-bottom: 10px;
@@ -398,6 +571,17 @@
   padding: 6px 12px;
   border-radius: 20px;
   font-size: 13px;
+  font-weight: 600;
+  color: white;
+}
+
+.scoreHigh,
+.scoreMedium,
+.scoreLow {
+  display: inline-block;
+  padding: 4px 10px;
+  border-radius: 20px;
+  font-size: 12px;
   font-weight: 600;
   color: white;
 }
@@ -417,6 +601,16 @@
 .scoreLow {
   background: #6b7280;
   box-shadow: 0 4px 12px rgba(107, 114, 128, 0.3);
+}
+
+@keyframes sheetSlideUp {
+  from { transform: translateY(100%); }
+  to   { transform: translateY(0); }
+}
+
+@keyframes sheetSlideDown {
+  from { transform: translateY(0); }
+  to   { transform: translateY(100%); }
 }
 
 @keyframes pulse-green {
@@ -777,6 +971,17 @@
   margin-bottom: 20px;
 }
 
+/* 검색 요약 바 */
+.searchSummary {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--text-secondary);
+  padding: 6px 2px;
+  margin-bottom: 8px;
+}
+
 /* 검색 결과 없음 */
 .noResults {
   text-align: center;
@@ -1049,8 +1254,8 @@
 
 /* 북마크 필터 버튼 */
 .bookmarkFilterButton {
-  padding: 10px 20px;
-  font-size: 14px;
+  padding: 6px 12px;
+  font-size: 13px;
   font-weight: 600;
   background: var(--bg-secondary);
   color: var(--text-primary);
@@ -1510,55 +1715,178 @@
     font-size: 1.5rem;
   }
 
+  /* 검색 폼: row wrap 유지, 행별 자연 줄바꿈 */
   .searchForm {
-    flex-direction: column;
-    align-items: stretch;
+    gap: 8px;
   }
 
+  /* 모드 선택: 컴팩트하게 */
   .compactModeSelector {
-    width: 100%;
-    justify-content: center;
+    padding: 3px;
   }
 
+  .compactModeButton {
+    padding: 8px 10px;
+    font-size: 13px;
+    gap: 4px;
+  }
+
+  /* 입력창: 남은 가로 공간 차지, 최소 너비로 다음 줄로 밀림 */
   .searchInputWrapper {
-    width: 100%;
+    flex: 1;
+    min-width: 180px;
   }
 
+  /* 검색 + 초기화 버튼: 한 행을 나눠 가짐 */
   .searchButton {
-    width: 100%;
+    flex: 1;
+    padding: 10px 16px;
+    font-size: 14px;
   }
 
+  .resetFiltersButton {
+    flex: 1;
+    padding: 10px 12px;
+    font-size: 13px;
+    text-align: center;
+  }
+
+  /* 시맨틱 옵션: 카드 형태로 묶음 */
+  .semanticOptions {
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+    width: 100%;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-color);
+    border-radius: 16px;
+    padding: 20px;
+  }
+
+  /* 유사도: 수직 레이아웃 */
   .similarityCompact {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
     width: 100%;
     min-width: 0;
+    padding: 0;
+    border: none;
+    border-radius: 0;
+    background: transparent;
+  }
+
+  .similarityHeader {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    width: 100%;
   }
 
   .similarityLabel {
-    font-size: 12px;
+    font-size: 13px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--text-secondary);
   }
 
   .similarityValue {
     font-size: 13px;
+    font-weight: 700;
     min-width: 38px;
     padding: 4px 8px;
+    color: var(--accent-color);
+    background: var(--bg-primary);
+    border-radius: 6px;
+    text-align: center;
+    box-shadow: 0 1px 4px var(--shadow-md);
   }
 
+  /* 슬라이더 두께 증가 */
   .similaritySliderCompact {
-    min-width: 80px;
-  }
-
-  .sentimentFilterCompact {
     width: 100%;
     min-width: 0;
-    justify-content: flex-start;
+    height: 10px;
+    border-radius: 5px;
+  }
+
+  .similaritySliderCompact::-webkit-slider-runnable-track {
+    height: 10px;
+    border-radius: 5px;
+  }
+
+  .similaritySliderCompact::-webkit-slider-thumb {
+    width: 22px;
+    height: 22px;
+    margin-top: -6px;
+  }
+
+  .sliderHints {
+    display: flex;
+    justify-content: space-between;
+    font-size: 10px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--text-secondary);
+    opacity: 0.6;
+  }
+
+  /* 감성 필터: 3열 카드 그리드 (컴팩트) */
+  .sentimentFilterCompact {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 6px;
+    width: 100%;
+    min-width: 0;
+    padding: 0;
+    border: none;
+    border-radius: 0;
+    background: transparent;
   }
 
   .sentimentFilterLabel {
-    font-size: 12px;
+    display: none;
+  }
+
+  .sentimentCheckbox {
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    gap: 4px;
+    padding: 8px 4px;
+    border-radius: 10px;
+    border: 2px solid var(--border-color);
+    background: var(--bg-primary);
+    box-shadow: 0 1px 4px var(--shadow-md);
+  }
+
+  .sentimentCheckbox input[type="checkbox"] {
+    display: none;
+  }
+
+  .sentimentCheckbox:has(input:checked) {
+    border-color: var(--accent-color);
+    background: color-mix(in srgb, var(--accent-color) 8%, var(--bg-primary));
+  }
+
+  .sentimentEmoji {
+    display: block;
+    font-size: 16px;
+    line-height: 1;
   }
 
   .sentimentText {
-    font-size: 12px;
+    font-size: 10px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--text-secondary);
+  }
+
+  .sentimentCheckbox:has(input:checked) .sentimentText {
+    color: var(--accent-color);
   }
 
   .modeButtons {
@@ -1623,13 +1951,46 @@
     padding: 10px 12px;
     font-size: 1.5rem;
   }
+
+  .container {
+    padding: 12px;
+  }
+
+  .article {
+    padding: 14px;
+    gap: 12px;
+  }
+
+  .rightPanel {
+    flex-direction: column;
+  }
+
+  .rightSection {
+    min-width: 0;
+    width: 100%;
+  }
+}
+
+@media (max-width: 480px) {
+  .container {
+    padding: 8px;
+  }
+
+  .article {
+    padding: 12px;
+    border-radius: 12px;
+  }
+
+  .badgeRow {
+    gap: 4px;
+  }
 }
 
 /* 설정 모달 */
 .modalOverlay {
   position: fixed;
   top: 0;
-  left: 0;
+  left: 256px;
   right: 0;
   bottom: 0;
   background: rgba(0, 0, 0, 0.6);
@@ -1640,6 +2001,13 @@
   justify-content: center;
   z-index: 2000;
   animation: fadeIn 0.2s ease-out;
+}
+
+@media (max-width: 768px) {
+  .modalOverlay {
+    left: 0;
+    bottom: 72px;
+  }
 }
 
 @keyframes fadeIn {
@@ -2883,9 +3251,10 @@
   display: flex;
   flex-direction: column;
   gap: 4px;
-  flex: 1;
+  flex: 0 1 auto;
   overflow-y: auto;
   width: 100%;
+  max-height: 300px;
 }
 
 .folderListItem {
@@ -2939,7 +3308,12 @@
   opacity: 0;
   transition: opacity 0.15s;
 }
-.folderListItem:hover .folderActions {
+@media (hover: hover) {
+  .folderListItem:hover .folderActions {
+    opacity: 1;
+  }
+}
+.folderActionsVisible {
   opacity: 1;
 }
 .folderActionButton {
@@ -2958,7 +3332,7 @@
 .addFolderRow {
   display: flex;
   gap: 6px;
-  margin-top: 14px;
+  margin-top: 180px;
   width: 100%;
 }
 .addFolderInput {
@@ -3264,8 +3638,10 @@
     width: 100%;
     border-right: none;
     border-bottom: 1px solid var(--border-color);
-    padding-right: 0;
-    padding-bottom: 12px;
+    padding: 0 0 12px 0;
+  }
+  .bookmarkManagerLayout {
+    gap: 0;
   }
   .tabItem {
     max-width: 160px;

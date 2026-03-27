@@ -301,6 +301,7 @@ export default function Home() {
   const [selectedBookmarkFolder, setSelectedBookmarkFolder] = useState<string | null>(null);
   const [showBookmarkManager, setShowBookmarkManager] = useState<boolean>(false);
   const [renamingFolderId, setRenamingFolderId] = useState<string | null>(null);
+  const [activeFolderActionId, setActiveFolderActionId] = useState<string | null>(null);
   const [renamingFolderName, setRenamingFolderName] = useState<string>('');
   const [newFolderName, setNewFolderName] = useState<string>('');
   const [folderDropdownArticleId, setFolderDropdownArticleId] = useState<string | null>(null);
@@ -315,6 +316,21 @@ export default function Home() {
   const [searchTabs, setSearchTabs] = useState<SearchTab[]>([]);
   const [activeTabId, setActiveTabId] = useState<string | null>(null);
   const [tabContextMenu, setTabContextMenu] = useState<{ tabId: string; x: number; y: number } | null>(null);
+
+  // 모바일 필터 바텀 시트
+  const [showMobileFilter, setShowMobileFilter] = useState<boolean>(false);
+  const [filterClosing, setFilterClosing] = useState<boolean>(false);
+  const sheetDragStartY = useRef<number>(0);
+
+  const openMobileFilter = () => setShowMobileFilter(true);
+  const closeMobileFilter = () => {
+    if (filterClosing) return;
+    setFilterClosing(true);
+    setTimeout(() => {
+      setShowMobileFilter(false);
+      setFilterClosing(false);
+    }, 310);
+  };
 
   // 설정 모달
   const [showSettings, setShowSettings] = useState<boolean>(false);
@@ -1533,70 +1549,90 @@ export default function Home() {
             </button>
           )}
 
-          {/* 시맨틱 검색 시 유사도 조절 */}
+          {/* 시맨틱 검색 시 유사도 + 감성 필터 */}
           {searchMode === 'semantic' && (
-            <div
-              className={styles.similarityCompact}
-              title={
-                minSimilarity >= 0.6
-                  ? '엄격: 매우 관련성 높은 뉴스만'
-                  : minSimilarity >= 0.4
-                  ? '보통: 관련있는 뉴스 (권장)'
-                  : minSimilarity >= 0.2
-                  ? '느슨: 약간 관련있어도 포함'
-                  : '전체: 모든 뉴스 (관련도순)'
-              }
-            >
-              <label htmlFor="similarity-slider" className={styles.similarityLabel}>
-                유사도
-              </label>
-              <input
-                id="similarity-slider"
-                type="range"
-                min="0.0"
-                max="0.9"
-                step="0.05"
-                value={minSimilarity}
-                onChange={(e) => setMinSimilarity(parseFloat(e.target.value))}
-                className={styles.similaritySliderCompact}
-              />
-              <span className={styles.similarityValue}>
-                {(minSimilarity * 100).toFixed(0)}%
-              </span>
-            </div>
-          )}
+            <div className={styles.semanticOptions}>
+              <div
+                className={styles.similarityCompact}
+                title={
+                  minSimilarity >= 0.6
+                    ? '엄격: 매우 관련성 높은 뉴스만'
+                    : minSimilarity >= 0.4
+                    ? '보통: 관련있는 뉴스 (권장)'
+                    : minSimilarity >= 0.2
+                    ? '느슨: 약간 관련있어도 포함'
+                    : '전체: 모든 뉴스 (관련도순)'
+                }
+              >
+                <div className={styles.similarityHeader}>
+                  <label htmlFor="similarity-slider" className={styles.similarityLabel}>
+                    유사도
+                  </label>
+                  <span className={styles.similarityValue}>
+                    {(minSimilarity * 100).toFixed(0)}%
+                  </span>
+                </div>
+                <input
+                  id="similarity-slider"
+                  type="range"
+                  min="0.0"
+                  max="0.9"
+                  step="0.05"
+                  value={minSimilarity}
+                  onChange={(e) => setMinSimilarity(parseFloat(e.target.value))}
+                  className={styles.similaritySliderCompact}
+                />
+                <div className={styles.sliderHints}>
+                  <span>전체</span>
+                  <span>엄격</span>
+                </div>
+              </div>
 
-          {/* AI 검색 시 감성 필터 */}
-          {searchMode === 'semantic' && (
-            <div className={styles.sentimentFilterCompact}>
-              <span className={styles.sentimentFilterLabel}>감성</span>
-              <label className={styles.sentimentCheckbox} title="긍정 기사만">
-                <input
-                  type="checkbox"
-                  checked={sentimentFilter.has('positive')}
-                  onChange={(e) => handleSentimentFilterChange('positive', e.target.checked)}
-                />
-                <span className={styles.sentimentText}>긍정</span>
-              </label>
-              <label className={styles.sentimentCheckbox} title="부정 기사만">
-                <input
-                  type="checkbox"
-                  checked={sentimentFilter.has('negative')}
-                  onChange={(e) => handleSentimentFilterChange('negative', e.target.checked)}
-                />
-                <span className={styles.sentimentText}>부정</span>
-              </label>
-              <label className={styles.sentimentCheckbox} title="중립 기사만">
-                <input
-                  type="checkbox"
-                  checked={sentimentFilter.has('neutral')}
-                  onChange={(e) => handleSentimentFilterChange('neutral', e.target.checked)}
-                />
-                <span className={styles.sentimentText}>중립</span>
-              </label>
+              <div className={styles.sentimentFilterCompact}>
+                <span className={styles.sentimentFilterLabel}>감성</span>
+                <label className={styles.sentimentCheckbox} title="긍정 기사만">
+                  <span className={styles.sentimentEmoji}>🟢</span>
+                  <input
+                    type="checkbox"
+                    checked={sentimentFilter.has('positive')}
+                    onChange={(e) => handleSentimentFilterChange('positive', e.target.checked)}
+                  />
+                  <span className={styles.sentimentText}>긍정</span>
+                </label>
+                <label className={styles.sentimentCheckbox} title="부정 기사만">
+                  <span className={styles.sentimentEmoji}>🔴</span>
+                  <input
+                    type="checkbox"
+                    checked={sentimentFilter.has('negative')}
+                    onChange={(e) => handleSentimentFilterChange('negative', e.target.checked)}
+                  />
+                  <span className={styles.sentimentText}>부정</span>
+                </label>
+                <label className={styles.sentimentCheckbox} title="중립 기사만">
+                  <span className={styles.sentimentEmoji}>🟡</span>
+                  <input
+                    type="checkbox"
+                    checked={sentimentFilter.has('neutral')}
+                    onChange={(e) => handleSentimentFilterChange('neutral', e.target.checked)}
+                  />
+                  <span className={styles.sentimentText}>중립</span>
+                </label>
+              </div>
             </div>
           )}
         </form>
+
+        {/* 모바일 필터 토글 버튼 */}
+        <button
+          className={`${styles.mobileFilterToggle} ${showMobileFilter && !filterClosing ? styles.mobileFilterToggleOpen : ''}`}
+          onClick={() => showMobileFilter ? closeMobileFilter() : openMobileFilter()}
+        >
+          <span className="material-symbols-outlined" style={{ fontSize: 16 }}>tune</span>
+          <span>필터 설정</span>
+          {(dateFilter !== 'all' || selectedSource || showBookmarksOnly) && (
+            <span className={styles.mobileFilterBadge} />
+          )}
+        </button>
 
         {/* 탭 바 (탭 모드일 때) */}
         {resultDisplayMode === 'tab' && (
@@ -1848,6 +1884,18 @@ export default function Home() {
         <div className={`${searchMode === 'semantic' && (total > 0 || showBookmarksOnly) ? styles.twoColumnLayout : ''} ${mobileTab === 'analysis' ? styles.showAnalysis : ''}`}>
           {/* 검색 결과 영역 */}
           <div className={styles.resultsColumn}>
+            {/* 검색 요약 */}
+            {searchTime > 0 && lastSearchMode === searchMode && (
+              <div className={styles.searchSummary}>
+                <span>⏱ {searchTime.toFixed(2)}초</span>
+                <span>·</span>
+                <span>
+                  {searchMode === 'semantic' && totalCollected > 0
+                    ? `${totalCollected}개 수집 → ${total}개`
+                    : `${total}개`}
+                </span>
+              </div>
+            )}
             <div className={`${styles.articles} ${styles[viewMode]}`}>
           {displayedArticles.map((article) => {
             const articleWithScore = article as NewsArticleWithScore;
@@ -1910,58 +1958,54 @@ export default function Home() {
                   />
                 )}
                 <div className={styles.content}>
-                  {/* 감성 배지 (AI 검색 + 분석 완료 시) */}
-                  {searchMode === 'semantic' && analysisData && (article as any).sentiment && (
-                    <div style={{ marginBottom: '8px' }}>
-                      <span style={{
-                        display: 'inline-block',
-                        padding: '4px 12px',
-                        borderRadius: '12px',
-                        fontSize: '12px',
-                        fontWeight: 600,
-                        backgroundColor: (article as any).sentiment === 'positive' ? '#e8f5e9' :
-                                        (article as any).sentiment === 'negative' ? '#ffebee' : '#fff3e0',
-                        color: (article as any).sentiment === 'positive' ? '#4caf50' :
-                               (article as any).sentiment === 'negative' ? '#f44336' : '#ff9800'
-                      }}>
-                        {(article as any).sentiment === 'positive' ? '🟢 긍정' :
-                         (article as any).sentiment === 'negative' ? '🔴 부정' : '🟡 중립'}
-                      </span>
+                  {/* 배지 행: 감성 + 유사도 + 키워드 */}
+                  {(searchMode === 'semantic' && analysisData && (article as any).sentiment) || hasSimilarityScore || (article.matchedKeyword && lastSearchQuery.includes(',')) ? (
+                    <div className={styles.badgeRow}>
+                      {searchMode === 'semantic' && analysisData && (article as any).sentiment && (
+                        <span style={{
+                          display: 'inline-block',
+                          padding: '4px 12px',
+                          borderRadius: '12px',
+                          fontSize: '12px',
+                          fontWeight: 600,
+                          backgroundColor: (article as any).sentiment === 'positive' ? '#e8f5e9' :
+                                          (article as any).sentiment === 'negative' ? '#ffebee' : '#fff3e0',
+                          color: (article as any).sentiment === 'positive' ? '#4caf50' :
+                                 (article as any).sentiment === 'negative' ? '#f44336' : '#ff9800'
+                        }}>
+                          {(article as any).sentiment === 'positive' ? '🟢 긍정' :
+                           (article as any).sentiment === 'negative' ? '🔴 부정' : '🟡 중립'}
+                        </span>
+                      )}
+                      {hasSimilarityScore && (
+                        <span
+                          className={
+                            articleWithScore.similarity_score >= 0.7
+                              ? styles.scoreHigh
+                              : articleWithScore.similarity_score >= 0.5
+                              ? styles.scoreMedium
+                              : styles.scoreLow
+                          }
+                        >
+                          {(articleWithScore.similarity_score * 100).toFixed(0)}% 일치
+                        </span>
+                      )}
+                      {article.matchedKeyword && lastSearchQuery.includes(',') && (
+                        <span style={{
+                          display: 'inline-block',
+                          padding: '2px 8px',
+                          borderRadius: '10px',
+                          fontSize: '11px',
+                          fontWeight: 600,
+                          backgroundColor: '#e3f2fd',
+                          color: '#1565c0',
+                          border: '1px solid #90caf9',
+                        }}>
+                          {article.matchedKeyword}
+                        </span>
+                      )}
                     </div>
-                  )}
-                  {/* 시맨틱 검색 시 유사도 점수 배지 */}
-                  {hasSimilarityScore && (
-                    <div className={styles.similarityBadge}>
-                      <span
-                        className={
-                          articleWithScore.similarity_score >= 0.7
-                            ? styles.scoreHigh
-                            : articleWithScore.similarity_score >= 0.5
-                            ? styles.scoreMedium
-                            : styles.scoreLow
-                        }
-                      >
-                        {(articleWithScore.similarity_score * 100).toFixed(0)}% 일치
-                      </span>
-                    </div>
-                  )}
-                  {/* 매칭된 키워드 배지 (복수 키워드 검색 시) */}
-                  {article.matchedKeyword && lastSearchQuery.includes(',') && (
-                    <div style={{ marginBottom: '4px' }}>
-                      <span style={{
-                        display: 'inline-block',
-                        padding: '2px 8px',
-                        borderRadius: '10px',
-                        fontSize: '11px',
-                        fontWeight: 600,
-                        backgroundColor: '#e3f2fd',
-                        color: '#1565c0',
-                        border: '1px solid #90caf9',
-                      }}>
-                        {article.matchedKeyword}
-                      </span>
-                    </div>
-                  )}
+                  ) : null}
                   <h2 className={styles.title}>
                     <a href={article.url} target="_blank" rel="noopener noreferrer">
                       {highlightText(article.title, lastSearchQuery)}
@@ -2236,31 +2280,21 @@ export default function Home() {
           </div>
           </div>
           {/* Right: Filters + Bookmarks */}
-          <div className={styles.rightPanel}>
-            {/* 검색 결과 요약 */}
-            {searchTime > 0 && lastSearchMode === searchMode && (
-              <div className={styles.perfCards}>
-                <div className={styles.perfCard}>
-                  <span className={styles.perfLabel}>검색 시간</span>
-                  <div className={styles.perfValueRow}>
-                    <span className={styles.perfNumber}>{searchTime.toFixed(2)}</span>
-                    <span className={styles.perfUnit}>초</span>
-                  </div>
-                </div>
-                <div className={styles.perfDivider} />
-                <div className={styles.perfCard}>
-                  <span className={styles.perfLabel}>수집된 기사</span>
-                  <div className={styles.perfValueRow}>
-                    <span className={styles.perfNumber}>
-                      {searchMode === 'semantic' && totalCollected > 0 ? totalCollected : total}
-                    </span>
-                    <span className={styles.perfUnit}>
-                      {searchMode === 'semantic' && totalCollected > 0 ? `→ ${total}개` : '개'}
-                    </span>
-                  </div>
-                </div>
-              </div>
-            )}
+          {showMobileFilter && (
+            <div className={styles.mobileFilterOverlay} onClick={closeMobileFilter} />
+          )}
+          <div
+            className={`${styles.rightPanel} ${showMobileFilter && !filterClosing ? styles.mobileFilterOpen : ''} ${filterClosing ? styles.mobileFilterClosing : ''}`}
+          >
+            {/* 모바일 시트 헤더 */}
+            <div
+              className={styles.mobileFilterHeader}
+              onTouchStart={(e) => { sheetDragStartY.current = e.touches[0].clientY; }}
+              onTouchEnd={(e) => { if (e.changedTouches[0].clientY - sheetDragStartY.current > 60) closeMobileFilter(); }}
+            >
+              <span className={styles.mobileFilterTitle}>필터 설정</span>
+              <button className={styles.mobileFilterClose} onClick={closeMobileFilter}>✕</button>
+            </div>
 
             {/* 북마크 */}
             <div className={styles.rightSection}>
@@ -2289,8 +2323,7 @@ export default function Home() {
               </div>
             </div>
 
-            {(total > 0 || showBookmarksOnly) && (resultDisplayMode === 'normal' || activeTabId) && (
-              <>
+            <>
                 {/* 북마크 폴더 */}
                 {showBookmarksOnly && bookmarkFolders.length > 0 && (
                   <div className={styles.rightSection}>
@@ -2360,8 +2393,7 @@ export default function Home() {
                     </div>
                   </div>
                 )}
-              </>
-            )}
+            </>
           </div>
         </div>
       </main>
@@ -3029,7 +3061,14 @@ export default function Home() {
                 {/* 폴더 목록 (좌측) */}
                 <div className={styles.folderSidebar}>
                   <h4 className={styles.folderSidebarTitle}>폴더</h4>
-                  <div className={styles.folderList}>
+                  <div
+                    className={styles.folderList}
+                    onClick={(e) => {
+                      if (!(e.target as Element).closest(`.${styles.folderListItem}`)) {
+                        setActiveFolderActionId(null);
+                      }
+                    }}
+                  >
                     <button
                       className={`${styles.folderListItem} ${!selectedBookmarkFolder ? styles.active : ''}`}
                       onClick={() => setSelectedBookmarkFolder(null)}
@@ -3037,7 +3076,11 @@ export default function Home() {
                       전체 ({bookmarkedArticles.size})
                     </button>
                     {bookmarkFolders.map(folder => (
-                      <div key={folder.id} className={`${styles.folderListItem} ${selectedBookmarkFolder === folder.id ? styles.active : ''}`}>
+                      <div
+                        key={folder.id}
+                        className={`${styles.folderListItem} ${selectedBookmarkFolder === folder.id ? styles.active : ''}`}
+                        onClick={() => setActiveFolderActionId(activeFolderActionId === folder.id ? null : folder.id)}
+                      >
                         {renamingFolderId === folder.id ? (
                           <input
                             type="text"
@@ -3059,7 +3102,7 @@ export default function Home() {
                             {folder.name} ({(folderArticleMap[folder.id] || []).length})
                           </button>
                         )}
-                        <div className={styles.folderActions}>
+                        <div className={`${styles.folderActions} ${activeFolderActionId === folder.id ? styles.folderActionsVisible : ''}`}>
                           <button
                             onClick={() => {
                               setRenamingFolderId(folder.id);
