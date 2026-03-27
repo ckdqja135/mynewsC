@@ -4,7 +4,6 @@ import { useState, useEffect, useMemo, useRef } from 'react';
 import { NewsApiService } from '@/services/newsApi';
 import type { NewsArticle, NewsArticleWithScore, SearchMode, NewsAnalysisResponse, SentimentType, LarkConfig } from '@/types/news';
 import styles from './page.module.css';
-import Link from 'next/link';
 import DatePicker from 'react-datepicker';
 import { ko } from 'date-fns/locale';
 import 'react-datepicker/dist/react-datepicker.css';
@@ -12,7 +11,6 @@ import 'react-datepicker/dist/react-datepicker.css';
 type ViewMode = 'list' | 'grid';
 type SortOrder = 'desc' | 'asc';
 type SortType = 'relevance' | 'date';
-type Theme = 'light' | 'dark';
 type ResultDisplayMode = 'normal' | 'tab';
 
 // 북마크 폴더
@@ -264,7 +262,6 @@ export default function Home() {
   const [sortOrder, setSortOrder] = useState<SortOrder>('desc');
   const [sortType, setSortType] = useState<SortType>('relevance');
   const [selectedSource, setSelectedSource] = useState<string | null>(null);
-  const [theme, setTheme] = useState<Theme>('light');
   const [itemsPerPage, setItemsPerPage] = useState<number>(20);
   const [currentPage, setCurrentPage] = useState<number>(1); // For grid view pagination
   const [displayedCount, setDisplayedCount] = useState<number>(20); // For list view infinite scroll
@@ -321,6 +318,12 @@ export default function Home() {
 
   // 설정 모달
   const [showSettings, setShowSettings] = useState<boolean>(false);
+
+  useEffect(() => {
+    const handler = () => setShowSettings(true);
+    window.addEventListener('open-settings', handler);
+    return () => window.removeEventListener('open-settings', handler);
+  }, []);
   const [settingsTab, setSettingsTab] = useState<'auto-search' | 'lark' | 'keywords' | 'display'>('auto-search');
   const [defaultQuery, setDefaultQuery] = useState<string>('');
   const [defaultSearchMode, setDefaultSearchMode] = useState<SearchMode>('keyword');
@@ -371,14 +374,6 @@ export default function Home() {
   const [newNegativeKeyword, setNewNegativeKeyword] = useState('');
 
   useEffect(() => {
-    const savedTheme = localStorage.getItem('theme') as Theme;
-    if (savedTheme) {
-      setTheme(savedTheme);
-      document.documentElement.setAttribute('data-theme', savedTheme);
-    } else {
-      document.documentElement.setAttribute('data-theme', 'light');
-    }
-
     // 검색 히스토리 로드
     const savedHistory = localStorage.getItem('searchHistory');
     if (savedHistory) {
@@ -788,13 +783,6 @@ export default function Home() {
       }
       return updated;
     });
-  };
-
-  const toggleTheme = () => {
-    const newTheme = theme === 'light' ? 'dark' : 'light';
-    setTheme(newTheme);
-    localStorage.setItem('theme', newTheme);
-    document.documentElement.setAttribute('data-theme', newTheme);
   };
 
   // Lark 테스트 전송
@@ -1428,34 +1416,10 @@ export default function Home() {
 
   return (
     <div className={styles.container}>
-      {/* 우측 상단 고정 버튼들 */}
-      <div className={styles.fixedButtons}>
-        <button
-          className={styles.settingsButton}
-          onClick={() => setShowSettings(true)}
-          aria-label="설정"
-          title="자동 검색 설정"
-        >
-          ⚙️
-        </button>
-        <button
-          className={styles.themeToggle}
-          onClick={toggleTheme}
-          aria-label="테마 전환"
-          title={theme === 'light' ? '다크 모드로 전환' : '라이트 모드로 전환'}
-        >
-          {theme === 'light' ? '🌙' : '☀️'}
-        </button>
-      </div>
-
-      <header className={styles.header}>
-        <div className={styles.headerContent}>
-          <h1>뉴스봇</h1>
-          <p>나의 뉴스 비서</p>
-        </div>
-      </header>
-
       <main className={styles.main}>
+        <div className={styles.contentLayout}>
+          {/* Left: Search + Tabs + Articles */}
+          <div className={styles.leftColumn}>
         {/* 통합 검색 바 */}
         <form onSubmit={handleSearch} className={styles.searchForm}>
           {/* 검색 모드 선택 */}
@@ -1634,31 +1598,7 @@ export default function Home() {
           )}
         </form>
 
-        {/* 북마크 바 - 항상 표시 */}
-        <div className={styles.bookmarkBar}>
-          <button
-            className={`${styles.bookmarkFilterButton} ${showBookmarksOnly ? styles.active : ''}`}
-            onClick={() => {
-              setShowBookmarksOnly(!showBookmarksOnly);
-              if (showBookmarksOnly) setSelectedBookmarkFolder(null);
-            }}
-            title={showBookmarksOnly ? '전체 보기' : '북마크만 보기'}
-          >
-            {showBookmarksOnly ? '⭐ 북마크 필터 ON' : '☆ 북마크만 보기'}
-            {bookmarkedArticles.size > 0 && (
-              <span className={styles.bookmarkCount}>({bookmarkedArticles.size})</span>
-            )}
-          </button>
-          <button
-            className={styles.bookmarkManagerButton}
-            onClick={() => setShowBookmarkManager(true)}
-            title="북마크 관리"
-          >
-            북마크 관리
-          </button>
-        </div>
-
-        {/* 탭 바 (탭 모드일 때) - 검색 바 바로 하단 */}
+        {/* 탭 바 (탭 모드일 때) */}
         {resultDisplayMode === 'tab' && (
           <div className={styles.tabBar}>
             <div className={styles.tabBarScroll}>
@@ -1756,125 +1696,6 @@ export default function Home() {
         )}
 
         {(total > 0 || showBookmarksOnly) && (resultDisplayMode === 'normal' || activeTabId) && (
-          <>
-            {/* 북마크 폴더 선택 바 */}
-            {showBookmarksOnly && bookmarkFolders.length > 0 && (
-              <div className={styles.bookmarkFolderBar}>
-                <button
-                  className={`${styles.folderPill} ${!selectedBookmarkFolder ? styles.active : ''}`}
-                  onClick={() => setSelectedBookmarkFolder(null)}
-                >
-                  전체
-                </button>
-                {bookmarkFolders.map(folder => (
-                  <button
-                    key={folder.id}
-                    className={`${styles.folderPill} ${selectedBookmarkFolder === folder.id ? styles.active : ''}`}
-                    onClick={() => setSelectedBookmarkFolder(folder.id)}
-                  >
-                    {folder.name}
-                    <span className={styles.folderPillCount}>
-                      ({(folderArticleMap[folder.id] || []).length})
-                    </span>
-                  </button>
-                ))}
-              </div>
-            )}
-
-            {/* 날짜 필터 */}
-            <div className={styles.dateFilter}>
-              <label className={styles.filterLabel}>기간 필터</label>
-              <div className={styles.dateFilterButtons}>
-                <button
-                  className={`${styles.dateFilterButton} ${dateFilter === 'all' ? styles.active : ''}`}
-                  onClick={() => setDateFilter('all')}
-                >
-                  전체
-                </button>
-                <button
-                  className={`${styles.dateFilterButton} ${dateFilter === 'today' ? styles.active : ''}`}
-                  onClick={() => setDateFilter('today')}
-                >
-                  오늘
-                </button>
-                <button
-                  className={`${styles.dateFilterButton} ${dateFilter === 'week' ? styles.active : ''}`}
-                  onClick={() => setDateFilter('week')}
-                >
-                  최근 7일
-                </button>
-                <button
-                  className={`${styles.dateFilterButton} ${dateFilter === 'month' ? styles.active : ''}`}
-                  onClick={() => setDateFilter('month')}
-                >
-                  최근 30일
-                </button>
-                <button
-                  className={`${styles.dateFilterButton} ${dateFilter === 'custom' ? styles.active : ''}`}
-                  onClick={() => setDateFilter('custom')}
-                >
-                  직접 선택
-                </button>
-              </div>
-              {searchTime > 0 && lastSearchMode === searchMode && (
-                <div className={styles.perfCards}>
-                  <div className={styles.perfCard}>
-                    <span className={styles.perfLabel}>검색 시간</span>
-                    <span className={styles.perfValue}>{searchTime.toFixed(2)}초</span>
-                  </div>
-                  <div className={styles.perfCard}>
-                    <span className={styles.perfLabel}>수집된 기사</span>
-                    <span className={styles.perfValue}>
-                      {searchMode === 'semantic' && totalCollected > 0
-                        ? `${totalCollected}개 → ${total}개`
-                        : `${total}개`}
-                    </span>
-                  </div>
-                </div>
-              )}
-              {dateFilter === 'custom' && (
-                <div className={styles.customDateRange}>
-                  <DatePicker
-                    selected={customStartDate}
-                    onChange={(date: Date | null) => setCustomStartDate(date)}
-                    selectsStart
-                    startDate={customStartDate}
-                    endDate={customEndDate}
-                    maxDate={new Date()}
-                    locale={ko}
-                    dateFormat="yyyy.MM.dd"
-                    placeholderText="시작일"
-                    className={styles.dateInput}
-                    popperPlacement="bottom-start"
-                  />
-                  <span className={styles.dateSeparator}>~</span>
-                  <DatePicker
-                    selected={customEndDate}
-                    onChange={(date: Date | null) => setCustomEndDate(date)}
-                    selectsEnd
-                    startDate={customStartDate}
-                    endDate={customEndDate}
-                    minDate={customStartDate ?? undefined}
-                    maxDate={new Date()}
-                    locale={ko}
-                    dateFormat="yyyy.MM.dd"
-                    placeholderText="종료일"
-                    className={styles.dateInput}
-                    popperPlacement="bottom-start"
-                  />
-                  {(customStartDate || customEndDate) && (
-                    <button
-                      className={styles.dateResetButton}
-                      onClick={() => { setCustomStartDate(null); setCustomEndDate(null); }}
-                    >
-                      초기화
-                    </button>
-                  )}
-                </div>
-              )}
-            </div>
-
-
             <div className={styles.controls}>
               <div className={styles.resultCount}>
                 총 {filteredAndSortedArticles.length}개의 기사
@@ -1987,40 +1808,6 @@ export default function Home() {
                 </div>
               </div>
             </div>
-
-            {sources.length > 1 && (
-              <div className={styles.sourceFilterContainer}>
-                <div
-                  className={styles.sourceFilterHeader}
-                  onClick={() => setShowSourceFilter(!showSourceFilter)}
-                  role="button"
-                  aria-label={showSourceFilter ? '필터 접기' : '필터 펼치기'}
-                >
-                  <span className={styles.sourceFilterTitle}>언론사 필터</span>
-                  <span className={styles.sourceFilterArrow}>{showSourceFilter ? '▲' : '▼'}</span>
-                </div>
-                {showSourceFilter && (
-                  <div className={styles.sourceFilter}>
-                    <button
-                      className={`${styles.sourceButton} ${!selectedSource ? styles.active : ''}`}
-                      onClick={() => setSelectedSource(null)}
-                    >
-                      전체 ({total})
-                    </button>
-                    {sources.map(({ source, count }) => (
-                      <button
-                        key={source}
-                        className={`${styles.sourceButton} ${selectedSource === source ? styles.active : ''}`}
-                        onClick={() => setSelectedSource(source)}
-                      >
-                        {source} ({count})
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </div>
-            )}
-          </>
         )}
 
         {/* 검색 결과 없음 메시지 */}
@@ -2446,6 +2233,136 @@ export default function Home() {
               </div>
             </div>
           )}
+          </div>
+          </div>
+          {/* Right: Filters + Bookmarks */}
+          <div className={styles.rightPanel}>
+            {/* 검색 결과 요약 */}
+            {searchTime > 0 && lastSearchMode === searchMode && (
+              <div className={styles.perfCards}>
+                <div className={styles.perfCard}>
+                  <span className={styles.perfLabel}>검색 시간</span>
+                  <div className={styles.perfValueRow}>
+                    <span className={styles.perfNumber}>{searchTime.toFixed(2)}</span>
+                    <span className={styles.perfUnit}>초</span>
+                  </div>
+                </div>
+                <div className={styles.perfDivider} />
+                <div className={styles.perfCard}>
+                  <span className={styles.perfLabel}>수집된 기사</span>
+                  <div className={styles.perfValueRow}>
+                    <span className={styles.perfNumber}>
+                      {searchMode === 'semantic' && totalCollected > 0 ? totalCollected : total}
+                    </span>
+                    <span className={styles.perfUnit}>
+                      {searchMode === 'semantic' && totalCollected > 0 ? `→ ${total}개` : '개'}
+                    </span>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* 북마크 */}
+            <div className={styles.rightSection}>
+              <h3 className={styles.rightSectionTitle}>북마크</h3>
+              <div className={styles.rightSectionBody}>
+                <button
+                  className={`${styles.bookmarkFilterButton} ${showBookmarksOnly ? styles.active : ''}`}
+                  onClick={() => {
+                    setShowBookmarksOnly(!showBookmarksOnly);
+                    if (showBookmarksOnly) setSelectedBookmarkFolder(null);
+                  }}
+                  title={showBookmarksOnly ? '전체 보기' : '북마크만 보기'}
+                >
+                  {showBookmarksOnly ? '⭐ 북마크 필터 ON' : '☆ 북마크만 보기'}
+                  {bookmarkedArticles.size > 0 && (
+                    <span className={styles.bookmarkCount}>({bookmarkedArticles.size})</span>
+                  )}
+                </button>
+                <button
+                  className={styles.bookmarkManagerButton}
+                  onClick={() => setShowBookmarkManager(true)}
+                  title="북마크 관리"
+                >
+                  북마크 관리
+                </button>
+              </div>
+            </div>
+
+            {(total > 0 || showBookmarksOnly) && (resultDisplayMode === 'normal' || activeTabId) && (
+              <>
+                {/* 북마크 폴더 */}
+                {showBookmarksOnly && bookmarkFolders.length > 0 && (
+                  <div className={styles.rightSection}>
+                    <h3 className={styles.rightSectionTitle}>폴더</h3>
+                    <div className={styles.bookmarkFolderBar}>
+                      <button
+                        className={`${styles.folderPill} ${!selectedBookmarkFolder ? styles.active : ''}`}
+                        onClick={() => setSelectedBookmarkFolder(null)}
+                      >
+                        전체
+                      </button>
+                      {bookmarkFolders.map(folder => (
+                        <button
+                          key={folder.id}
+                          className={`${styles.folderPill} ${selectedBookmarkFolder === folder.id ? styles.active : ''}`}
+                          onClick={() => setSelectedBookmarkFolder(folder.id)}
+                        >
+                          {folder.name}
+                          <span className={styles.folderPillCount}>
+                            ({(folderArticleMap[folder.id] || []).length})
+                          </span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* 기간 필터 */}
+                <div className={styles.rightSection}>
+                  <h3 className={styles.rightSectionTitle}>기간 필터</h3>
+                  <div className={styles.dateFilterButtons}>
+                    <button className={`${styles.dateFilterButton} ${dateFilter === 'all' ? styles.active : ''}`} onClick={() => setDateFilter('all')}>전체</button>
+                    <button className={`${styles.dateFilterButton} ${dateFilter === 'today' ? styles.active : ''}`} onClick={() => setDateFilter('today')}>오늘</button>
+                    <button className={`${styles.dateFilterButton} ${dateFilter === 'week' ? styles.active : ''}`} onClick={() => setDateFilter('week')}>최근 7일</button>
+                    <button className={`${styles.dateFilterButton} ${dateFilter === 'month' ? styles.active : ''}`} onClick={() => setDateFilter('month')}>최근 30일</button>
+                    <button className={`${styles.dateFilterButton} ${dateFilter === 'custom' ? styles.active : ''}`} onClick={() => setDateFilter('custom')}>직접 선택</button>
+                  </div>
+                  {dateFilter === 'custom' && (
+                    <div className={styles.customDateRange}>
+                      <DatePicker selected={customStartDate} onChange={(date: Date | null) => setCustomStartDate(date)} selectsStart startDate={customStartDate} endDate={customEndDate} maxDate={new Date()} locale={ko} dateFormat="yyyy.MM.dd" placeholderText="시작일" className={styles.dateInput} popperPlacement="bottom-start" />
+                      <span className={styles.dateSeparator}>~</span>
+                      <DatePicker selected={customEndDate} onChange={(date: Date | null) => setCustomEndDate(date)} selectsEnd startDate={customStartDate} endDate={customEndDate} minDate={customStartDate ?? undefined} maxDate={new Date()} locale={ko} dateFormat="yyyy.MM.dd" placeholderText="종료일" className={styles.dateInput} popperPlacement="bottom-start" />
+                      {(customStartDate || customEndDate) && (
+                        <button className={styles.dateResetButton} onClick={() => { setCustomStartDate(null); setCustomEndDate(null); }}>초기화</button>
+                      )}
+                    </div>
+                  )}
+                </div>
+
+                {/* 언론사 필터 */}
+                {sources.length > 1 && (
+                  <div className={styles.rightSection}>
+                    <h3 className={styles.rightSectionTitle}>언론사 필터</h3>
+                    <div className={styles.sourceFilter}>
+                      <button className={`${styles.sourceButton} ${!selectedSource ? styles.active : ''}`} onClick={() => setSelectedSource(null)}>
+                        전체 ({total})
+                      </button>
+                      {sources.map(({ source, count }) => (
+                        <button
+                          key={source}
+                          className={`${styles.sourceButton} ${selectedSource === source ? styles.active : ''}`}
+                          onClick={() => setSelectedSource(source)}
+                        >
+                          {source} ({count})
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </>
+            )}
+          </div>
         </div>
       </main>
 

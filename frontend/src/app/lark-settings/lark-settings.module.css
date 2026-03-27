@@ -1,47 +1,23 @@
 .container {
-  min-height: 100vh;
-  padding: 20px;
+  padding: 32px;
   max-width: 900px;
-  margin: 0 auto;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
 }
 
-.header {
-  text-align: center;
-  margin-bottom: 40px;
-  padding: 40px 20px;
-  background: rgba(255, 255, 255, 0.95);
-  border-radius: 16px;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+.pageTitle {
+  margin-bottom: 28px;
 }
 
-.backLink {
-  display: inline-block;
-  margin-bottom: 20px;
-  color: #667eea;
-  text-decoration: none;
-  font-weight: 600;
-  transition: all 0.2s;
+.pageTitle h1 {
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  margin: 0 0 4px 0;
 }
 
-.backLink:hover {
-  color: #764ba2;
-  transform: translateX(-4px);
-}
-
-.header h1 {
-  margin: 0 0 12px 0;
-  font-size: 32px;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
-}
-
-.header p {
+.pageTitle p {
+  font-size: 0.9rem;
+  color: var(--text-secondary);
   margin: 0;
-  color: #666;
-  font-size: 16px;
 }
 
 .main {
@@ -51,10 +27,11 @@
 }
 
 .card {
-  background: white;
+  background: var(--bg-secondary);
   border-radius: 16px;
   padding: 32px;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+  box-shadow: 0 2px 12px var(--shadow-md);
+  border: 1px solid var(--border-color);
 }
 
 .section {
@@ -68,9 +45,9 @@
 .section h2 {
   margin: 0 0 20px 0;
   font-size: 20px;
-  color: #333;
+  color: var(--text-primary);
   padding-bottom: 12px;
-  border-bottom: 2px solid #f0f0f0;
+  border-bottom: 1px solid var(--border-color);
 }
 
 .field {

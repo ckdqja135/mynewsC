@@ -4,7 +4,6 @@ import { useState, useEffect } from 'react';
 import { NewsApiService } from '@/services/newsApi';
 import type { SentimentType, LarkConfig } from '@/types/news';
 import styles from './lark-settings.module.css';
-import Link from 'next/link';
 
 export default function LarkSettingsPage() {
   const [larkEnabled, setLarkEnabled] = useState(false);
@@ -110,11 +109,10 @@ export default function LarkSettingsPage() {
 
   return (
     <div className={styles.container}>
-      <header className={styles.header}>
-        <Link href="/" className={styles.backLink}>← 검색으로 돌아가기</Link>
+      <div className={styles.pageTitle}>
         <h1>🔔 Lark 알림 설정</h1>
         <p>뉴스 알림을 Lark 메신저로 자동 전송합니다</p>
-      </header>
+      </div>
 
       <main className={styles.main}>
         <div className={styles.card}>
