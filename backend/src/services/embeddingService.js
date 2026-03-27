@@ -128,6 +128,30 @@ class EmbeddingService {
   }
 
   /**
+   * 청크 배열을 쿼리와의 유사도로 랭킹합니다.
+   * @param {string} query
+   * @param {Array} chunks - [{chunkId, articleId, text, article, ...}]
+   * @param {number} topK - 반환할 상위 청크 수
+   * @returns {Promise<Array>} 유사도 순으로 정렬된 청크 배열 (score 필드 포함)
+   */
+  async rankChunksBySimilarity(query, chunks, topK = 15) {
+    if (!chunks || chunks.length === 0) return [];
+
+    const queryEmbedding = await this._embed(query);
+
+    const scored = await Promise.all(
+      chunks.map(async chunk => {
+        const embedding = await this._embed(chunk.text);
+        const score = this._dotProduct(queryEmbedding, embedding);
+        return { ...chunk, score };
+      })
+    );
+
+    scored.sort((a, b) => b.score - a.score);
+    return scored.slice(0, topK);
+  }
+
+  /**
    * Rank articles by semantic similarity to the query.
    * @param {string} query
    * @param {Array} articles - [{id, title, snippet, ...}]

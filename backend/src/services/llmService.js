@@ -27,6 +27,25 @@ Content: ${snippet}`;
     }).join('\n\n');
   }
 
+  /**
+   * RAG 청크 기반 컨텍스트 생성
+   * @param {Array} chunks - rankChunksBySimilarity 결과 [{text, article, score, ...}]
+   * @returns {string}
+   */
+  _prepareChunksContext(chunks) {
+    return chunks.map((chunk, idx) => {
+      const article = chunk.article;
+      const dateStr = article.publishedAt
+        ? new Date(article.publishedAt).toISOString().split('T')[0]
+        : '날짜 미상';
+
+      return `[참고 ${idx + 1}]
+제목: ${article.title}
+출처: ${article.source} | 날짜: ${dateStr}
+내용: ${chunk.text}`;
+    }).join('\n\n---\n\n');
+  }
+
   _parseJsonResponse(text) {
     let cleaned = text.trim();
     if (cleaned.startsWith('```')) {
@@ -37,8 +56,10 @@ Content: ${snippet}`;
     return JSON.parse(cleaned);
   }
 
-  async analyzeComprehensive(query, articles) {
-    const context = this._prepareArticlesContext(articles);
+  async analyzeComprehensive(query, articles, chunks = null) {
+    const context = chunks && chunks.length > 0
+      ? this._prepareChunksContext(chunks)
+      : this._prepareArticlesContext(articles);
 
     const dates = articles
       .filter(a => a.publishedAt)
@@ -118,8 +139,10 @@ Respond ONLY with valid JSON. No additional text.`;
     }
   }
 
-  async analyzeSentiment(query, articles) {
-    const context = this._prepareArticlesContext(articles);
+  async analyzeSentiment(query, articles, chunks = null) {
+    const context = chunks && chunks.length > 0
+      ? this._prepareChunksContext(chunks)
+      : this._prepareArticlesContext(articles);
 
     const prompt = `You are a professional sentiment analyst. Analyze the sentiment in news articles about "${query}".
 
@@ -184,8 +207,10 @@ Respond ONLY with valid JSON.`;
     }
   }
 
-  async analyzeTrends(query, articles) {
-    const context = this._prepareArticlesContext(articles);
+  async analyzeTrends(query, articles, chunks = null) {
+    const context = chunks && chunks.length > 0
+      ? this._prepareChunksContext(chunks)
+      : this._prepareArticlesContext(articles);
 
     const prompt = `You are a professional trend analyst. Identify trends and patterns in news articles about "${query}".
 
@@ -244,8 +269,10 @@ Respond ONLY with valid JSON.`;
     }
   }
 
-  async extractKeyPoints(query, articles) {
-    const context = this._prepareArticlesContext(articles);
+  async extractKeyPoints(query, articles, chunks = null) {
+    const context = chunks && chunks.length > 0
+      ? this._prepareChunksContext(chunks)
+      : this._prepareArticlesContext(articles);
 
     const prompt = `You are a professional news summarizer. Extract the most important key points from news articles about "${query}".
 

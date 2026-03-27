@@ -562,20 +562,47 @@ app.post('/api/news/analyze', async (req, res) => {
       articlesToAnalyze = filteredArticles.slice(0, num);
     }
 
+    // RAG 파이프라인: 본문 fetch → 청킹 → 유사도 랭킹
+    const { fetchArticleBodies } = require('./services/articleFetcher');
+    const { chunkText } = require('./services/chunkingService');
+
+    const FETCH_LIMIT = 15;
+    const articlesForFetch = articlesToAnalyze.slice(0, FETCH_LIMIT);
+
+    console.log(`[RAG] Fetching full bodies for ${articlesForFetch.length} articles...`);
+    const articlesWithBody = await fetchArticleBodies(articlesForFetch);
+    const fetchedCount = articlesWithBody.filter(a => a.fullText).length;
+    console.log(`[RAG] Fetched: ${fetchedCount}/${articlesForFetch.length}`);
+
+    const allChunks = [];
+    for (const article of articlesWithBody) {
+      if (article.fullText) {
+        const chunks = chunkText(article.fullText, article.id);
+        chunks.forEach(chunk => allChunks.push({ ...chunk, article }));
+      }
+    }
+    console.log(`[RAG] Total chunks: ${allChunks.length}`);
+
+    let contextChunks = null;
+    if (allChunks.length > 0 && embeddingService) {
+      contextChunks = await embeddingService.rankChunksBySimilarity(q, allChunks, 15);
+      console.log(`[RAG] Top chunks selected: ${contextChunks.length}`);
+    }
+
     // Perform analysis
     let analysisResult;
     switch (analysisType) {
       case 'comprehensive':
-        analysisResult = await llmService.analyzeComprehensive(q, articlesToAnalyze);
+        analysisResult = await llmService.analyzeComprehensive(q, articlesToAnalyze, contextChunks);
         break;
       case 'sentiment':
-        analysisResult = await llmService.analyzeSentiment(q, articlesToAnalyze);
+        analysisResult = await llmService.analyzeSentiment(q, articlesToAnalyze, contextChunks);
         break;
       case 'trend':
-        analysisResult = await llmService.analyzeTrends(q, articlesToAnalyze);
+        analysisResult = await llmService.analyzeTrends(q, articlesToAnalyze, contextChunks);
         break;
       case 'key_points':
-        analysisResult = await llmService.extractKeyPoints(q, articlesToAnalyze);
+        analysisResult = await llmService.extractKeyPoints(q, articlesToAnalyze, contextChunks);
         break;
     }
 
