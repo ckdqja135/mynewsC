@@ -1366,7 +1366,7 @@ export default function Home() {
     const handleClickOutside = (e: MouseEvent) => {
       if (showHistory) {
         const target = e.target as HTMLElement;
-        if (!target.closest(`.${styles.searchInputWrapper}`)) {
+        if (!target.closest(`.${styles.searchBar}`)) {
           setShowHistory(false);
         }
       }
@@ -1447,7 +1447,7 @@ export default function Home() {
               title="키워드가 포함된 뉴스를 검색합니다"
             >
               <span className={styles.modeIcon}>🔍</span>
-              <span className={styles.modeLabel}>일반</span>
+              <span className={styles.modeLabel}>일반 검색</span>
             </button>
             <button
               type="button"
@@ -1456,11 +1456,14 @@ export default function Home() {
               title="의미가 유사한 뉴스를 AI로 검색합니다"
             >
               <span className={styles.modeIcon}>🤖</span>
-              <span className={styles.modeLabel}>AI</span>
+              <span className={styles.modeLabel}>AI 검색</span>
             </button>
           </div>
 
-          <div className={styles.searchInputWrapper}>
+          <div className={styles.searchBar}>
+            <svg className={styles.searchBarLeadingIcon} xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" />
+            </svg>
             <input
               type="text"
               value={query}
@@ -1480,6 +1483,14 @@ export default function Home() {
                 ✕
               </button>
             )}
+            <button type="submit" className={styles.searchBarSubmit} disabled={loading} aria-label="검색">
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                {loading
+                  ? <circle cx="12" cy="12" r="8" strokeDasharray="32" strokeDashoffset="16" />
+                  : <><circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" /></>
+                }
+              </svg>
+            </button>
             {searchHistory.length > 0 && showHistory && (
               <div className={styles.searchHistoryDropdown}>
                 <div className={styles.historyHeader}>
@@ -1522,19 +1533,6 @@ export default function Home() {
               </div>
             )}
           </div>
-          <button
-            type="submit"
-            className={styles.searchButton}
-            disabled={loading}
-          >
-            <span className={styles.searchButtonText}>{loading ? '검색 중...' : '검색'}</span>
-            <svg className={styles.searchButtonIcon} xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-              {loading
-                ? <circle cx="12" cy="12" r="8" strokeDasharray="32" strokeDashoffset="16" />
-                : <><circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" /></>
-              }
-            </svg>
-          </button>
           {(query || selectedSource || dateFilter !== 'all' || sortOrder !== 'desc' || showBookmarksOnly || sentimentFilter.size < 3 || minSimilarity !== 0.3) && (
             <button
               type="button"
@@ -1555,77 +1553,6 @@ export default function Home() {
             </button>
           )}
 
-          {/* 시맨틱 검색 시 유사도 + 감성 필터 */}
-          {searchMode === 'semantic' && (
-            <div className={styles.semanticOptions}>
-              <div
-                className={styles.similarityCompact}
-                title={
-                  minSimilarity >= 0.6
-                    ? '엄격: 매우 관련성 높은 뉴스만'
-                    : minSimilarity >= 0.4
-                    ? '보통: 관련있는 뉴스 (권장)'
-                    : minSimilarity >= 0.2
-                    ? '느슨: 약간 관련있어도 포함'
-                    : '전체: 모든 뉴스 (관련도순)'
-                }
-              >
-                <div className={styles.similarityHeader}>
-                  <label htmlFor="similarity-slider" className={styles.similarityLabel}>
-                    유사도
-                  </label>
-                  <span className={styles.similarityValue}>
-                    {(minSimilarity * 100).toFixed(0)}%
-                  </span>
-                </div>
-                <input
-                  id="similarity-slider"
-                  type="range"
-                  min="0.0"
-                  max="0.9"
-                  step="0.05"
-                  value={minSimilarity}
-                  onChange={(e) => setMinSimilarity(parseFloat(e.target.value))}
-                  className={styles.similaritySliderCompact}
-                />
-                <div className={styles.sliderHints}>
-                  <span>전체</span>
-                  <span>엄격</span>
-                </div>
-              </div>
-
-              <div className={styles.sentimentFilterCompact}>
-                <span className={styles.sentimentFilterLabel}>감성</span>
-                <label className={styles.sentimentCheckbox} title="긍정 기사만">
-                  <span className={styles.sentimentEmoji}>🟢</span>
-                  <input
-                    type="checkbox"
-                    checked={sentimentFilter.has('positive')}
-                    onChange={(e) => handleSentimentFilterChange('positive', e.target.checked)}
-                  />
-                  <span className={styles.sentimentText}>긍정</span>
-                </label>
-                <label className={styles.sentimentCheckbox} title="부정 기사만">
-                  <span className={styles.sentimentEmoji}>🔴</span>
-                  <input
-                    type="checkbox"
-                    checked={sentimentFilter.has('negative')}
-                    onChange={(e) => handleSentimentFilterChange('negative', e.target.checked)}
-                  />
-                  <span className={styles.sentimentText}>부정</span>
-                </label>
-                <label className={styles.sentimentCheckbox} title="중립 기사만">
-                  <span className={styles.sentimentEmoji}>🟡</span>
-                  <input
-                    type="checkbox"
-                    checked={sentimentFilter.has('neutral')}
-                    onChange={(e) => handleSentimentFilterChange('neutral', e.target.checked)}
-                  />
-                  <span className={styles.sentimentText}>중립</span>
-                </label>
-              </div>
-            </div>
-          )}
         </form>
 
         {/* 모바일 필터 토글 버튼 */}
@@ -2301,6 +2228,64 @@ export default function Home() {
               <span className={styles.mobileFilterTitle}>필터 설정</span>
               <button className={styles.mobileFilterClose} onClick={closeMobileFilter}>✕</button>
             </div>
+
+            {/* AI 검색 옵션 (시맨틱 모드일 때만) */}
+            {searchMode === 'semantic' && (
+              <div className={styles.rightSection}>
+                <h3 className={styles.rightSectionTitle}>AI 검색 설정</h3>
+                <div className={styles.semanticOptions}>
+                  <div
+                    className={styles.similarityCompact}
+                    title={
+                      minSimilarity >= 0.6
+                        ? '엄격: 매우 관련성 높은 뉴스만'
+                        : minSimilarity >= 0.4
+                        ? '보통: 관련있는 뉴스 (권장)'
+                        : minSimilarity >= 0.2
+                        ? '느슨: 약간 관련있어도 포함'
+                        : '전체: 모든 뉴스 (관련도순)'
+                    }
+                  >
+                    <div className={styles.similarityHeader}>
+                      <label htmlFor="similarity-slider" className={styles.similarityLabel}>유사도</label>
+                      <span className={styles.similarityValue}>{(minSimilarity * 100).toFixed(0)}%</span>
+                    </div>
+                    <input
+                      id="similarity-slider"
+                      type="range"
+                      min="0.0"
+                      max="0.9"
+                      step="0.05"
+                      value={minSimilarity}
+                      onChange={(e) => setMinSimilarity(parseFloat(e.target.value))}
+                      className={styles.similaritySliderCompact}
+                    />
+                    <div className={styles.sliderHints}>
+                      <span>전체</span>
+                      <span>엄격</span>
+                    </div>
+                  </div>
+                  <div className={styles.sentimentFilterCompact}>
+                    <span className={styles.sentimentFilterLabel}>감성</span>
+                    <label className={styles.sentimentCheckbox} title="긍정 기사만">
+                      <span className={styles.sentimentEmoji}>🟢</span>
+                      <input type="checkbox" checked={sentimentFilter.has('positive')} onChange={(e) => handleSentimentFilterChange('positive', e.target.checked)} />
+                      <span className={styles.sentimentText}>긍정</span>
+                    </label>
+                    <label className={styles.sentimentCheckbox} title="부정 기사만">
+                      <span className={styles.sentimentEmoji}>🔴</span>
+                      <input type="checkbox" checked={sentimentFilter.has('negative')} onChange={(e) => handleSentimentFilterChange('negative', e.target.checked)} />
+                      <span className={styles.sentimentText}>부정</span>
+                    </label>
+                    <label className={styles.sentimentCheckbox} title="중립 기사만">
+                      <span className={styles.sentimentEmoji}>🟡</span>
+                      <input type="checkbox" checked={sentimentFilter.has('neutral')} onChange={(e) => handleSentimentFilterChange('neutral', e.target.checked)} />
+                      <span className={styles.sentimentText}>중립</span>
+                    </label>
+                  </div>
+                </div>
+              </div>
+            )}
 
             {/* 북마크 */}
             <div className={styles.rightSection}>
