@@ -1742,7 +1742,8 @@
   .searchButton {
     flex: 1;
     padding: 10px 16px;
-    font-size: 14px;
+    font-size: 13px;
+    font-weight: 600;
     white-space: nowrap;
   }
 
