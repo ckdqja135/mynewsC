@@ -1338,6 +1338,7 @@
   cursor: pointer;
   transition: all 0.2s;
   color: var(--text-secondary);
+  white-space: nowrap;
 }
 
 .viewButton {
@@ -1742,6 +1743,18 @@
     flex: 1;
     padding: 10px 16px;
     font-size: 14px;
+    white-space: nowrap;
+  }
+
+  /* 정렬 버튼: 가로 스크롤 허용, 버튼 패딩 축소 */
+  .sortButtons {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .sortButton {
+    padding: 8px 10px;
+    font-size: 12px;
   }
 
   .resetFiltersButton {

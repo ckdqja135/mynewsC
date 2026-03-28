@@ -409,13 +409,17 @@ ${articlesText}
 
         return scores;
       } catch (error) {
-        if (error.message && error.message.includes('429') && attempt < MAX_RETRIES - 1) {
+        const isRetryable = attempt < MAX_RETRIES - 1 && (
+          error.status === 429 || (error.message && error.message.includes('429')) ||
+          (error.status >= 500 && error.status < 600)
+        );
+        if (isRetryable) {
           const delay = 1000 * (attempt + 1);
-          console.warn(`[LLM Rerank] Rate limited, retrying in ${delay}ms (attempt ${attempt + 1}/${MAX_RETRIES})`);
+          console.warn(`[LLM Rerank] API error [${error.status || '?'}], retrying in ${delay}ms (attempt ${attempt + 1}/${MAX_RETRIES})`);
           await new Promise(r => setTimeout(r, delay));
           continue;
         }
-        console.error(`[LLM Rerank] Batch rerank failed: ${error.message}`);
+        console.error(`[LLM Rerank] Batch rerank failed [${error.status || '?'}]: ${error.message}`);
         return articles.map(() => 3); // 실패 시 중간값으로 fallback
       }
     }
@@ -487,13 +491,17 @@ ${articlesText}
 
         return results;
       } catch (error) {
-        if (error.message && error.message.includes('429') && attempt < MAX_RETRIES - 1) {
+        const isRetryable = attempt < MAX_RETRIES - 1 && (
+          error.status === 429 || (error.message && error.message.includes('429')) ||
+          (error.status >= 500 && error.status < 600)
+        );
+        if (isRetryable) {
           const delay = 1000 * (attempt + 1);
-          console.warn(`[LLM] Rate limited, retrying in ${delay}ms (attempt ${attempt + 1}/${MAX_RETRIES})`);
+          console.warn(`[LLM] API error [${error.status || '?'}], retrying in ${delay}ms (attempt ${attempt + 1}/${MAX_RETRIES})`);
           await new Promise(r => setTimeout(r, delay));
           continue;
         }
-        console.error(`[LLM] Batch sentiment failed: ${error.message}`);
+        console.error(`[LLM] Batch sentiment failed [${error.status || '?'}]: ${error.message}`);
         return articles.map(() => 'neutral');
       }
     }

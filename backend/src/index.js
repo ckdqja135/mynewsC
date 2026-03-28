@@ -611,7 +611,7 @@ app.post('/api/news/analyze', async (req, res) => {
     analysisCache.set(analysisResult, cacheParams);
     res.json(analysisResult);
   } catch (err) {
-    console.error('Analysis error:', err);
+    console.error('Analysis error:', err.status ? `[${err.status}] ${err.message}` : err.message || err);
     res.status(500).json({ detail: `Failed to analyze news: ${err.message}` });
   }
 });
@@ -698,7 +698,7 @@ app.post('/api/news/classify-sentiment', async (req, res) => {
       query
     });
   } catch (error) {
-    console.error('[Sentiment] Classification error:', error);
+    console.error('[Sentiment] Classification error:', error.status ? `[${error.status}] ${error.message}` : error.message || error);
     res.status(500).json({ detail: `Failed to classify sentiment: ${error.message}` });
   }
 });
