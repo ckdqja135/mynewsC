@@ -1253,6 +1253,7 @@
   color: var(--text-tertiary);
   font-weight: 400;
   font-size: 0.95rem;
+  white-space: nowrap;
 }
 
 .controlButtons {
@@ -1774,6 +1775,10 @@
   .searchBarSubmit svg {
     width: 16px;
     height: 16px;
+  }
+
+  .resultCount {
+    font-size: 0.9rem;
   }
 
   /* 정렬 버튼: 가로 스크롤 허용, 버튼 패딩 축소 */
