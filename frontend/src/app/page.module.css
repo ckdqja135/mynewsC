@@ -814,6 +814,13 @@
   font-weight: 500;
 }
 
+.searchButtonIcon {
+  display: none;
+  width: 20px;
+  height: 20px;
+  flex-shrink: 0;
+}
+
 .searchButton {
   padding: 15px 40px;
   font-size: 16px;
@@ -1740,11 +1747,17 @@
 
   /* 검색 + 초기화 버튼: 한 행을 나눠 가짐 */
   .searchButton {
-    flex: 1;
-    padding: 10px 16px;
-    font-size: 13px;
-    font-weight: 600;
+    flex: none;
+    padding: 10px 14px;
     white-space: nowrap;
+  }
+
+  .searchButtonText {
+    display: none;
+  }
+
+  .searchButtonIcon {
+    display: block;
   }
 
   /* 정렬 버튼: 가로 스크롤 허용, 버튼 패딩 축소 */

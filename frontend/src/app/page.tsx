@@ -1527,7 +1527,13 @@ export default function Home() {
             className={styles.searchButton}
             disabled={loading}
           >
-            {loading ? '검색 중...' : '검색'}
+            <span className={styles.searchButtonText}>{loading ? '검색 중...' : '검색'}</span>
+            <svg className={styles.searchButtonIcon} xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              {loading
+                ? <circle cx="12" cy="12" r="8" strokeDasharray="32" strokeDashoffset="16" />
+                : <><circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" /></>
+              }
+            </svg>
           </button>
           {(query || selectedSource || dateFilter !== 'all' || sortOrder !== 'desc' || showBookmarksOnly || sentimentFilter.size < 3 || minSimilarity !== 0.3) && (
             <button
