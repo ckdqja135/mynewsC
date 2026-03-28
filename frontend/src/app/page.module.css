@@ -1725,30 +1725,35 @@
 
   /* 검색 폼: row wrap 유지, 행별 자연 줄바꿈 */
   .searchForm {
-    gap: 8px;
+    gap: 6px;
+    flex-wrap: nowrap;
+    align-items: center;
+    padding: 10px 12px;
   }
 
   /* 모드 선택: 컴팩트하게 */
   .compactModeSelector {
     padding: 3px;
+    gap: 2px;
+    flex-shrink: 0;
   }
 
   .compactModeButton {
-    padding: 8px 10px;
-    font-size: 13px;
-    gap: 4px;
+    padding: 7px 9px;
+    font-size: 12px;
+    gap: 3px;
   }
 
-  /* 입력창: 남은 가로 공간 차지, 최소 너비로 다음 줄로 밀림 */
+  /* 입력창: 남은 가로 공간 차지 */
   .searchInputWrapper {
     flex: 1;
-    min-width: 180px;
+    min-width: 0;
   }
 
-  /* 검색 + 초기화 버튼: 한 행을 나눠 가짐 */
+  /* 검색 버튼: 아이콘 전용 */
   .searchButton {
     flex: none;
-    padding: 10px 14px;
+    padding: 9px 12px;
     white-space: nowrap;
   }
 
