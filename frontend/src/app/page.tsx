@@ -2346,6 +2346,9 @@ export default function Home() {
                         onClick={() => setSelectedBookmarkFolder(null)}
                       >
                         전체
+                        <span className={styles.folderPillCount}>
+                          ({bookmarkedData.size})
+                        </span>
                       </button>
                       {bookmarkFolders.map(folder => (
                         <button
