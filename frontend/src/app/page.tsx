@@ -2339,7 +2339,7 @@ export default function Home() {
                 {/* 북마크 폴더 */}
                 {showBookmarksOnly && bookmarkFolders.length > 0 && (
                   <div className={styles.rightSection}>
-                    <h3 className={styles.rightSectionTitle}>폴더</h3>
+                    <h3 className={styles.rightSectionTitle}>북마크 폴더</h3>
                     <div className={styles.bookmarkFolderBar}>
                       <button
                         className={`${styles.folderPill} ${!selectedBookmarkFolder ? styles.active : ''}`}
