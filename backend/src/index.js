@@ -57,6 +57,10 @@ try {
 const { ArticleSentimentClassifier, DEFAULT_POSITIVE_KEYWORDS, DEFAULT_NEGATIVE_KEYWORDS } = require('./services/articleSentimentClassifier');
 const sentimentClassifier = new ArticleSentimentClassifier();
 
+// Feedback Service (Phase 3)
+const { getFeedbackService } = require('./services/feedbackService');
+const feedbackService = getFeedbackService();
+
 // Sentiment Trainer (embedding-based classifier)
 let sentimentTrainer = null;
 try {
@@ -604,7 +608,7 @@ app.post('/api/news/analyze', async (req, res) => {
 
     let contextChunks = null;
     if (allChunks.length > 0 && embeddingService) {
-      contextChunks = await embeddingService.rankChunksBySimilarity(q, allChunks, 10);
+      contextChunks = await embeddingService.rankChunksBySimilarity(q, allChunks, 10, feedbackService);
       console.log(`[RAG] Top chunks selected: ${contextChunks.length}`);
     }
 
@@ -1425,6 +1429,35 @@ app.delete('/api/lark/schedule-config', (req, res) => {
     }
   }
 })();
+
+// ==================== Feedback API (Phase 3) ====================
+
+/**
+ * POST /api/feedback/submit
+ * Body: { articleId: string, feedback: 'like' | 'dislike' }
+ */
+app.post('/api/feedback/submit', (req, res) => {
+  const { articleId, feedback } = req.body;
+  if (!articleId || !['like', 'dislike'].includes(feedback)) {
+    return res.status(400).json({ detail: "articleId and feedback ('like'|'dislike') required" });
+  }
+  const result = feedbackService.submit(articleId, feedback);
+  res.json({ articleId, ...result });
+});
+
+/**
+ * GET /api/feedback/stats
+ */
+app.get('/api/feedback/stats', (req, res) => {
+  res.json(feedbackService.getStats());
+});
+
+/**
+ * GET /api/feedback/:articleId
+ */
+app.get('/api/feedback/:articleId', (req, res) => {
+  res.json(feedbackService.get(req.params.articleId));
+});
 
 // ==================== Start Server ====================
 

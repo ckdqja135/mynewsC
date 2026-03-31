@@ -149,12 +149,15 @@ class EmbeddingService {
 
   /**
    * 청크 배열을 쿼리와의 BM25 + 코사인 유사도 RRF 하이브리드로 랭킹합니다.
+   * Phase 3: feedbackService가 제공되면 피드백 부스트를 RRF 점수에 반영합니다.
+   *
    * @param {string} query
    * @param {Array} chunks - [{chunkId, articleId, text, article, ...}]
    * @param {number} topK - 반환할 상위 청크 수
+   * @param {object|null} feedbackService - FeedbackService 인스턴스 (선택)
    * @returns {Promise<Array>} RRF 순으로 정렬된 청크 배열 (score = cosine similarity)
    */
-  async rankChunksBySimilarity(query, chunks, topK = 15) {
+  async rankChunksBySimilarity(query, chunks, topK = 15, feedbackService = null) {
     if (!chunks || chunks.length === 0) return [];
 
     const queryType = this._classifyQuery(query);
@@ -182,6 +185,18 @@ class EmbeddingService {
       rrfMap.set(chunkId, (rrfMap.get(chunkId) || 0) + semW / (RRF_K + rank + 1)));
     bm25Ranked.forEach(({ chunkId }, rank) =>
       rrfMap.set(chunkId, (rrfMap.get(chunkId) || 0) + bm25W / (RRF_K + rank + 1)));
+
+    // Phase 3 — 피드백 부스트: net 좋아요 수에 비례해 RRF 점수 조정
+    if (feedbackService) {
+      const rrfMax = 1 / (RRF_K + 1); // RRF 최대값 기준 (~0.0164)
+      for (const chunk of scored) {
+        const articleId = chunk.article?.id || chunk.articleId;
+        const boost = feedbackService.getBoost(articleId);
+        if (boost !== 0) {
+          rrfMap.set(chunk.chunkId, (rrfMap.get(chunk.chunkId) || 0) + boost * rrfMax);
+        }
+      }
+    }
 
     scored.sort((a, b) => (rrfMap.get(b.chunkId) || 0) - (rrfMap.get(a.chunkId) || 0));
     return scored.slice(0, topK);

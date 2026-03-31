@@ -72,15 +72,34 @@ export interface NewsAnalysisRequest {
   articles?: NewsArticle[] | NewsArticleWithScore[]; // 필터링된 기사 전달 가능
 }
 
+export interface AnalysisSource {
+  title: string;
+  url: string;
+  score: number;
+}
+
 export interface NewsAnalysisResponse {
   query: string;
   analysis_type: string;
   articles_analyzed: number;
+  confidence_score: number | null;
+  sources: AnalysisSource[] | null;
   summary: string;
   key_points: string[];
   sentiment: SentimentAnalysis | null;
   trends: TrendAnalysis | null;
   generated_at: string;
+}
+
+export interface FeedbackRequest {
+  articleId: string;
+  feedback: 'like' | 'dislike';
+}
+
+export interface FeedbackResponse {
+  articleId: string;
+  likes: number;
+  dislikes: number;
 }
 
 // 감성 타입

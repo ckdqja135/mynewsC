@@ -6,6 +6,8 @@ import type {
   SemanticSearchResponse,
   NewsAnalysisRequest,
   NewsAnalysisResponse,
+  FeedbackRequest,
+  FeedbackResponse,
   LarkConfig,
   LarkSendRequest,
   LarkSendResponse,
@@ -182,6 +184,12 @@ export class NewsApiService {
       }
       throw new Error('Failed to save keyword settings');
     }
+  }
+
+  // 피드백 제출 (Phase 3)
+  static async submitFeedback(params: FeedbackRequest): Promise<FeedbackResponse> {
+    const response = await apiClient.post<FeedbackResponse>('/feedback/submit', params);
+    return response.data;
   }
 
   static async healthCheck(): Promise<{ status: string }> {

@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { NewsApiService } from '@/services/newsApi';
-import type { NewsAnalysisResponse, AnalysisType, ArticleWithSentiment, SentimentType, SentimentAnalysis, NewsArticle } from '@/types/news';
+import type { NewsAnalysisResponse, AnalysisType, ArticleWithSentiment, SentimentType, SentimentAnalysis, NewsArticle, AnalysisSource } from '@/types/news';
 import styles from './analyze.module.css';
 
 export default function AnalyzePage() {
@@ -13,6 +13,7 @@ export default function AnalyzePage() {
   const [error, setError] = useState('');
   const [analysis, setAnalysis] = useState<NewsAnalysisResponse | null>(null);
   const [excludedSources, setExcludedSources] = useState<Set<string>>(new Set());
+  const [feedbackMap, setFeedbackMap] = useState<Record<string, 'like' | 'dislike'>>({});
 
   // 감성 필터 관련 state
   const [sentimentFilter, setSentimentFilter] = useState<Set<SentimentType>>(
@@ -160,6 +161,16 @@ export default function AnalyzePage() {
       setError(err instanceof Error ? err.message : '분석에 실패했습니다');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleFeedback = async (articleId: string, feedback: 'like' | 'dislike') => {
+    if (feedbackMap[articleId]) return; // 이미 피드백 제출됨
+    try {
+      await NewsApiService.submitFeedback({ articleId, feedback });
+      setFeedbackMap(prev => ({ ...prev, [articleId]: feedback }));
+    } catch (err) {
+      console.error('Feedback failed:', err);
     }
   };
 
@@ -404,6 +415,56 @@ export default function AnalyzePage() {
                     </div>
                   </div>
                 </div>
+              </div>
+            )}
+
+            {/* 참고 소스 + 피드백 (Phase 3) */}
+            {analysis.sources && analysis.sources.length > 0 && (
+              <div className={styles.section}>
+                <h3>
+                  📎 참고 소스
+                  {analysis.confidence_score !== null && analysis.confidence_score !== undefined && (
+                    <span className={styles.confidenceBadge}>
+                      신뢰도 {Math.round(analysis.confidence_score * 100)}%
+                    </span>
+                  )}
+                </h3>
+                <p className={styles.sourceHelp}>이 분석에 사용된 기사입니다. 유용했나요?</p>
+                <ul className={styles.sourceList}>
+                  {analysis.sources.map((source: AnalysisSource, index: number) => {
+                    const fb = feedbackMap[source.url];
+                    return (
+                      <li key={index} className={styles.sourceItem}>
+                        <div className={styles.sourceInfo}>
+                          <a href={source.url} target="_blank" rel="noopener noreferrer" className={styles.sourceTitle}>
+                            {source.title}
+                          </a>
+                          <span className={styles.sourceScore}>
+                            유사도 {Math.round(source.score * 100)}%
+                          </span>
+                        </div>
+                        <div className={styles.feedbackButtons}>
+                          <button
+                            className={`${styles.feedbackBtn} ${fb === 'like' ? styles.feedbackActive : ''}`}
+                            onClick={() => handleFeedback(source.url, 'like')}
+                            disabled={!!fb}
+                            title="유용한 기사"
+                          >
+                            👍
+                          </button>
+                          <button
+                            className={`${styles.feedbackBtn} ${fb === 'dislike' ? styles.feedbackActive : ''}`}
+                            onClick={() => handleFeedback(source.url, 'dislike')}
+                            disabled={!!fb}
+                            title="관련 없는 기사"
+                          >
+                            👎
+                          </button>
+                        </div>
+                      </li>
+                    );
+                  })}
+                </ul>
               </div>
             )}
           </div>

@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useMemo, useRef } from 'react';
 import { NewsApiService } from '@/services/newsApi';
-import type { NewsArticle, NewsArticleWithScore, SearchMode, NewsAnalysisResponse, SentimentType, LarkConfig } from '@/types/news';
+import type { NewsArticle, NewsArticleWithScore, SearchMode, NewsAnalysisResponse, SentimentType, LarkConfig, AnalysisSource } from '@/types/news';
 import styles from './page.module.css';
 import DatePicker from 'react-datepicker';
 import { ko } from 'date-fns/locale';
@@ -374,6 +374,7 @@ export default function Home() {
   const [analysisData, setAnalysisData] = useState<NewsAnalysisResponse | null>(null);
   const [analysisLoading, setAnalysisLoading] = useState<boolean>(false);
   const [analysisError, setAnalysisError] = useState<string>('');
+  const [feedbackMap, setFeedbackMap] = useState<Record<string, 'like' | 'dislike'>>({});
   const [showAnalysisPanel, setShowAnalysisPanel] = useState<boolean>(true);
   const [analysisStep, setAnalysisStep] = useState<string>('');
   const [progressPercent, setProgressPercent] = useState<number>(0);
@@ -1077,6 +1078,16 @@ export default function Home() {
       setAnalysisStep('');
       setProgressPercent(0);
       analysisInProgress.current = false;
+    }
+  };
+
+  const handleFeedback = async (articleId: string, feedback: 'like' | 'dislike') => {
+    if (feedbackMap[articleId]) return;
+    try {
+      await NewsApiService.submitFeedback({ articleId, feedback });
+      setFeedbackMap(prev => ({ ...prev, [articleId]: feedback }));
+    } catch (err) {
+      console.error('Feedback failed:', err);
     }
   };
 
@@ -1971,6 +1982,20 @@ export default function Home() {
                   <div className={styles.meta}>
                     <span className={styles.source}>{article.source}</span>
                     <span className={styles.date}>{formatDate(article.publishedAt)}</span>
+                    <div className={styles.articleFeedback}>
+                      <button
+                        className={`${styles.feedbackBtn} ${feedbackMap[article.id] === 'like' ? styles.feedbackActive : ''}`}
+                        onClick={() => handleFeedback(article.id, 'like')}
+                        disabled={!!feedbackMap[article.id]}
+                        title="유용한 기사"
+                      >👍</button>
+                      <button
+                        className={`${styles.feedbackBtn} ${feedbackMap[article.id] === 'dislike' ? styles.feedbackActive : ''}`}
+                        onClick={() => handleFeedback(article.id, 'dislike')}
+                        disabled={!!feedbackMap[article.id]}
+                        title="관련 없는 기사"
+                      >👎</button>
+                    </div>
                   </div>
                 </div>
               </article>
@@ -2208,6 +2233,55 @@ export default function Home() {
                                 </div>
                               )}
                             </div>
+                          </div>
+                        )}
+
+                        {/* 참고 소스 + 피드백 */}
+                        {analysisData.sources && analysisData.sources.length > 0 && (
+                          <div className={styles.analysisSection}>
+                            <h4>
+                              📎 참고 소스
+                              {analysisData.confidence_score !== null && analysisData.confidence_score !== undefined && (
+                                <span className={styles.confidenceBadge}>
+                                  신뢰도 {Math.round(analysisData.confidence_score * 100)}%
+                                </span>
+                              )}
+                            </h4>
+                            <ul className={styles.sourceList}>
+                              {analysisData.sources.map((source: AnalysisSource, index: number) => {
+                                const fb = feedbackMap[source.url];
+                                return (
+                                  <li key={index} className={styles.sourceItem}>
+                                    <div className={styles.sourceInfo}>
+                                      <a href={source.url} target="_blank" rel="noopener noreferrer" className={styles.sourceTitle}>
+                                        {source.title}
+                                      </a>
+                                      <span className={styles.sourceScore}>
+                                        유사도 {Math.round(source.score * 100)}%
+                                      </span>
+                                    </div>
+                                    <div className={styles.feedbackButtons}>
+                                      <button
+                                        className={`${styles.feedbackBtn} ${fb === 'like' ? styles.feedbackActive : ''}`}
+                                        onClick={() => handleFeedback(source.url, 'like')}
+                                        disabled={!!fb}
+                                        title="유용한 기사"
+                                      >
+                                        👍
+                                      </button>
+                                      <button
+                                        className={`${styles.feedbackBtn} ${fb === 'dislike' ? styles.feedbackActive : ''}`}
+                                        onClick={() => handleFeedback(source.url, 'dislike')}
+                                        disabled={!!fb}
+                                        title="관련 없는 기사"
+                                      >
+                                        👎
+                                      </button>
+                                    </div>
+                                  </li>
+                                );
+                              })}
+                            </ul>
                           </div>
                         )}
 

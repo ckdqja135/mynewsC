@@ -1512,7 +1512,6 @@
   gap: 20px;
   transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
   position: relative;
-  overflow: hidden;
 }
 
 .article::before {
@@ -1523,6 +1522,7 @@
   width: 4px;
   height: 100%;
   background: var(--accent-color);
+  border-radius: 16px 0 0 16px;
   transform: scaleY(0);
   transition: transform 0.3s ease;
 }
@@ -1623,10 +1623,17 @@
 
 .meta {
   display: flex;
+  align-items: center;
   gap: 15px;
   font-size: 0.9rem;
   color: var(--text-tertiary);
   flex-wrap: wrap;
+}
+
+.articleFeedback {
+  display: flex;
+  gap: 4px;
+  margin-left: auto;
 }
 
 .source {
@@ -2930,6 +2937,93 @@
   font-size: 12px;
 }
 
+/* 참고 소스 + 피드백 */
+.confidenceBadge {
+  margin-left: 0.5rem;
+  font-size: 0.78rem;
+  font-weight: 500;
+  padding: 2px 8px;
+  border-radius: 12px;
+  background: var(--accent-color)20;
+  color: var(--accent-color);
+  vertical-align: middle;
+}
+
+.sourceList {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.sourceItem {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 10px;
+  background: var(--bg-hover);
+  border-radius: 6px;
+}
+
+.sourceInfo {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.sourceTitle {
+  font-size: 0.85rem;
+  color: var(--accent-color);
+  text-decoration: none;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 320px;
+}
+
+.sourceTitle:hover {
+  text-decoration: underline;
+}
+
+.sourceScore {
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+}
+
+.feedbackButtons {
+  display: flex;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.feedbackBtn {
+  background: none;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  padding: 3px 7px;
+  cursor: pointer;
+  font-size: 13px;
+  transition: background 0.15s, border-color 0.15s;
+}
+
+.feedbackBtn:hover:not(:disabled) {
+  background: var(--bg-hover, #f0f0f0);
+}
+
+.feedbackBtn:disabled {
+  cursor: default;
+  opacity: 0.6;
+}
+
+.feedbackActive {
+  background: var(--accent-color)20 !important;
+  border-color: var(--accent-color) !important;
+}
+
 /* 분석 플레이스홀더 */
 .analysisPlaceholder {
   text-align: center;
@@ -3258,17 +3352,24 @@
 }
 
 .folderDropdownToggle {
-  background: none;
-  border: none;
+  background: var(--bg-primary);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
   cursor: pointer;
-  font-size: 10px;
-  color: var(--text-tertiary);
-  padding: 2px;
+  font-size: 13px;
+  color: var(--text-secondary);
+  padding: 4px 8px;
   opacity: 0;
-  transition: opacity 0.2s;
+  transition: opacity 0.2s, background 0.15s, color 0.15s;
+  line-height: 1;
 }
 .article:hover .folderDropdownToggle {
   opacity: 1;
+}
+.folderDropdownToggle:hover {
+  background: var(--accent-color);
+  color: #fff;
+  border-color: var(--accent-color);
 }
 
 .folderContextMenu {
