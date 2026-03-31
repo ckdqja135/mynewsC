@@ -130,7 +130,7 @@ class DaumNewsService {
           });
         }
 
-        const publishedAt = dateText ? parsePublishedDate(dateText, 'daum') : null;
+        const publishedAt = parsePublishedDate(dateText, 'daum', url);
 
         if (snippet.length > 300) snippet = snippet.substring(0, 300);
         // Remove trailing source name and &nbsp;

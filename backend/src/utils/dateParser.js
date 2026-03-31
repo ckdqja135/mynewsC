@@ -95,6 +95,45 @@ function parseSerpApiDatetime(dateStr) {
 }
 
 /**
+ * Extract date from URL path patterns.
+ * Handles /YYYY/MM/DD/, YYYY-MM-DD, and 8-digit YYYYMMDD in URL.
+ */
+function extractDateFromUrl(url) {
+  if (!url) return null;
+  try {
+    // /YYYY/MM/DD/ pattern
+    let m = url.match(/\/(\d{4})\/(\d{1,2})\/(\d{1,2})(?:\/|$|-|\?)/);
+    if (m) {
+      const dt = new Date(parseInt(m[1]), parseInt(m[2]) - 1, parseInt(m[3]));
+      if (!isNaN(dt.getTime()) && parseInt(m[1]) >= 2000) return dt;
+    }
+
+    // YYYY-MM-DD pattern anywhere in URL
+    m = url.match(/(\d{4})-(\d{2})-(\d{2})/);
+    if (m) {
+      const dt = new Date(parseInt(m[1]), parseInt(m[2]) - 1, parseInt(m[3]));
+      if (!isNaN(dt.getTime()) && parseInt(m[1]) >= 2000) return dt;
+    }
+
+    // 8-digit YYYYMMDD after /, =, or _
+    m = url.match(/[/=_](\d{8})(?:\D|$)/);
+    if (m) {
+      const s = m[1];
+      const year  = parseInt(s.slice(0, 4));
+      const month = parseInt(s.slice(4, 6)) - 1;
+      const day   = parseInt(s.slice(6, 8));
+      if (year >= 2000 && month >= 0 && month < 12 && day >= 1 && day <= 31) {
+        const dt = new Date(year, month, day);
+        if (!isNaN(dt.getTime())) return dt;
+      }
+    }
+  } catch {
+    // ignore
+  }
+  return null;
+}
+
+/**
  * Parse published date based on source.
  * Supports multiple formats:
  * - SerpAPI format: '01/27/2026, 02:06 AM, +0000 UTC'
@@ -109,23 +148,30 @@ function parseDotDate(dateStr) {
   return isNaN(dt.getTime()) ? null : dt;
 }
 
-function parsePublishedDate(dateStr, source = 'google') {
-  if (!dateStr) return null;
+/**
+ * @param {string|null} dateStr
+ * @param {string} source
+ * @param {string|null} url - article URL used as last-resort fallback for date extraction
+ */
+function parsePublishedDate(dateStr, source = 'google', url = null) {
+  if (!dateStr) {
+    return url ? extractDateFromUrl(url) : null;
+  }
 
-  // Try SerpAPI datetime format first (most common)
   let result = parseSerpApiDatetime(dateStr);
   if (result) return result;
 
-  // Try relative time (Korean and English) - all sources
   result = parseGoogleRelativeTime(dateStr);
   if (result) return result;
 
-  // Try dot-separated date (YYYY.MM.DD)
   result = parseDotDate(dateStr);
   if (result) return result;
 
-  // Fallback to generic date parse
-  return parseNaverDate(dateStr);
+  result = parseNaverDate(dateStr);
+  if (result) return result;
+
+  // All string parsers failed — try URL
+  return url ? extractDateFromUrl(url) : null;
 }
 
-module.exports = { parsePublishedDate, parseNaverDate, parseGoogleRelativeTime, parseSerpApiDatetime };
+module.exports = { parsePublishedDate, extractDateFromUrl, parseNaverDate, parseGoogleRelativeTime, parseSerpApiDatetime };

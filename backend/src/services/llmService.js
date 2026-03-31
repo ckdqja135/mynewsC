@@ -28,7 +28,7 @@ Content: ${snippet}`;
   }
 
   /**
-   * RAG 청크 기반 컨텍스트 생성
+   * RAG 청크 기반 컨텍스트 생성 (URL 포함, 인용 강제)
    * @param {Array} chunks - rankChunksBySimilarity 결과 [{text, article, score, ...}]
    * @returns {string}
    */
@@ -38,12 +38,24 @@ Content: ${snippet}`;
       const dateStr = article.publishedAt
         ? new Date(article.publishedAt).toISOString().split('T')[0]
         : '날짜 미상';
+      const urlPart = article.url ? ` | URL: ${article.url}` : '';
 
+      const text = chunk.text.length > 300 ? chunk.text.slice(0, 300) + '...' : chunk.text;
       return `[참고 ${idx + 1}]
 제목: ${article.title}
-출처: ${article.source} | 날짜: ${dateStr}
-내용: ${chunk.text}`;
+출처: ${article.source} | 날짜: ${dateStr}${urlPart}
+내용: ${text}`;
     }).join('\n\n---\n\n');
+  }
+
+  /**
+   * 청크 배열의 평균 유사도로 신뢰도 점수 계산 (0~1)
+   */
+  _calcConfidence(chunks) {
+    if (!chunks || chunks.length === 0) return null;
+    const scores = chunks.map(c => c.score || 0).filter(s => s > 0);
+    if (scores.length === 0) return null;
+    return Math.round((scores.reduce((s, v) => s + v, 0) / scores.length) * 100) / 100;
   }
 
   _parseJsonResponse(text) {
@@ -72,9 +84,13 @@ Content: ${snippet}`;
       dateRange = ` (Articles from ${earliest} to ${latest})`;
     }
 
+    const citationNote = chunks && chunks.length > 0
+      ? '\n\n중요: 각 주장에 반드시 [참고 1], [참고 2] 형태로 출처를 명시하세요. 참고자료에 없는 내용은 작성하지 마세요.'
+      : '';
+
     const prompt = `You are a professional news analyst. Analyze the following news articles about "${query}"${dateRange} and provide a comprehensive analysis.
 
-${context}
+${context}${citationNote}
 
 IMPORTANT: Respond in Korean (한국어로 응답해주세요). All text fields should be in Korean.
 
@@ -85,7 +101,7 @@ When analyzing sentiment:
 Please provide a detailed analysis in the following JSON format:
 {
     "summary": "A concise 2-3 sentence summary of what's happening with ${query}",
-    "key_points": ["Key point 1", "Key point 2", "Key point 3", ...],
+    "key_points": ["Key point 1 [참고 N]", "Key point 2 [참고 N]", ...],
     "sentiment": {
         "overall_sentiment": "positive/negative/neutral",
         "sentiment_score": 0.0,
@@ -113,12 +129,19 @@ Respond ONLY with valid JSON. No additional text.`;
 
     const resultText = response.choices[0].message.content.trim();
 
+    const confidence_score = this._calcConfidence(chunks);
+    const sources = chunks
+      ? chunks.map(c => ({ title: c.article.title, url: c.article.url, score: c.score }))
+      : null;
+
     try {
       const result = this._parseJsonResponse(resultText);
       return {
         query,
         analysis_type: 'comprehensive',
         articles_analyzed: articles.length,
+        confidence_score,
+        sources,
         summary: result.summary || '',
         key_points: result.key_points || [],
         sentiment: result.sentiment || null,
@@ -130,6 +153,8 @@ Respond ONLY with valid JSON. No additional text.`;
         query,
         analysis_type: 'comprehensive',
         articles_analyzed: articles.length,
+        confidence_score,
+        sources,
         summary: resultText.slice(0, 500),
         key_points: ['Analysis completed but format error occurred'],
         sentiment: null,
@@ -181,12 +206,19 @@ Respond ONLY with valid JSON.`;
 
     const resultText = response.choices[0].message.content.trim();
 
+    const confidence_score = this._calcConfidence(chunks);
+    const sources = chunks
+      ? chunks.map(c => ({ title: c.article.title, url: c.article.url, score: c.score }))
+      : null;
+
     try {
       const result = this._parseJsonResponse(resultText);
       return {
         query,
         analysis_type: 'sentiment',
         articles_analyzed: articles.length,
+        confidence_score,
+        sources,
         summary: result.summary || '',
         key_points: result.key_points || [],
         sentiment: result.sentiment || null,
@@ -198,6 +230,8 @@ Respond ONLY with valid JSON.`;
         query,
         analysis_type: 'sentiment',
         articles_analyzed: articles.length,
+        confidence_score,
+        sources,
         summary: resultText.slice(0, 500),
         key_points: ['Sentiment analysis completed'],
         sentiment: null,
@@ -243,12 +277,19 @@ Respond ONLY with valid JSON.`;
 
     const resultText = response.choices[0].message.content.trim();
 
+    const confidence_score = this._calcConfidence(chunks);
+    const sources = chunks
+      ? chunks.map(c => ({ title: c.article.title, url: c.article.url, score: c.score }))
+      : null;
+
     try {
       const result = this._parseJsonResponse(resultText);
       return {
         query,
         analysis_type: 'trend',
         articles_analyzed: articles.length,
+        confidence_score,
+        sources,
         summary: result.summary || '',
         key_points: result.key_points || [],
         sentiment: null,
@@ -260,6 +301,8 @@ Respond ONLY with valid JSON.`;
         query,
         analysis_type: 'trend',
         articles_analyzed: articles.length,
+        confidence_score,
+        sources,
         summary: resultText.slice(0, 500),
         key_points: ['Trend analysis completed'],
         sentiment: null,
@@ -300,12 +343,19 @@ Focus on factual, actionable information. Respond ONLY with valid JSON.`;
 
     const resultText = response.choices[0].message.content.trim();
 
+    const confidence_score = this._calcConfidence(chunks);
+    const sources = chunks
+      ? chunks.map(c => ({ title: c.article.title, url: c.article.url, score: c.score }))
+      : null;
+
     try {
       const result = this._parseJsonResponse(resultText);
       return {
         query,
         analysis_type: 'key_points',
         articles_analyzed: articles.length,
+        confidence_score,
+        sources,
         summary: result.summary || '',
         key_points: result.key_points || [],
         sentiment: null,
@@ -317,12 +367,61 @@ Focus on factual, actionable information. Respond ONLY with valid JSON.`;
         query,
         analysis_type: 'key_points',
         articles_analyzed: articles.length,
+        confidence_score,
+        sources,
         summary: resultText.slice(0, 500),
         key_points: ['Key points extracted'],
         sentiment: null,
         trends: null,
         generated_at: new Date().toISOString(),
       };
+    }
+  }
+
+  /**
+   * 스니펫이 없는 기사들의 제목으로 짧은 요약 생성 (LLM 스니펫 fallback)
+   * @param {Array} articles - [{title, source, ...}]
+   * @returns {Promise<string[]>} 각 기사의 2문장 요약 (실패 시 null)
+   */
+  async generateSnippets(articles) {
+    if (!articles || articles.length === 0) return [];
+
+    const titlesText = articles.map((a, i) =>
+      `${i + 1}. [${a.source || '미상'}] ${a.title}`
+    ).join('\n');
+
+    const prompt = `아래 뉴스 기사 제목들을 보고, 각각 2문장 이내의 간결한 한국어 요약을 생성하세요.
+제목에 있는 정보만 활용하고, 추측은 최소화하세요.
+
+${titlesText}
+
+각 줄에 번호와 요약을 출력하세요 (예: "1. 요약 내용"):`;
+
+    try {
+      const response = await this.client.chat.completions.create({
+        model: this.model,
+        messages: [
+          { role: 'system', content: '뉴스 제목을 보고 2문장 이내 요약을 생성하는 어시스턴트입니다. 번호와 요약만 출력하세요.' },
+          { role: 'user', content: prompt },
+        ],
+        temperature: 0.2,
+        max_tokens: articles.length * 60,
+      });
+
+      const text = response.choices[0].message.content.trim();
+      const results = articles.map(() => null);
+
+      for (const line of text.split('\n')) {
+        const match = line.match(/^(\d+)\.\s*(.+)/);
+        if (match) {
+          const idx = parseInt(match[1]) - 1;
+          if (idx >= 0 && idx < articles.length) results[idx] = match[2].trim();
+        }
+      }
+      return results;
+    } catch (err) {
+      console.warn(`[LLM] generateSnippets failed: ${err.message}`);
+      return articles.map(() => null);
     }
   }
 

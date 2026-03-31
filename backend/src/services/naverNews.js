@@ -144,7 +144,7 @@ class NaverNewsService {
           }
         });
 
-        const publishedAt = dateText ? parsePublishedDate(dateText, 'naver') : null;
+        const publishedAt = parsePublishedDate(dateText, 'naver', url);
 
         // Find snippet
         let snippet = '';

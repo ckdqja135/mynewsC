@@ -117,9 +117,7 @@ class NewsCrawler {
         cleanTitle = title.substring(0, dashIdx).trim();
       }
 
-      const publishedAt = item.pubDate
-        ? parsePublishedDate(item.pubDate, sourceName)
-        : null;
+      const publishedAt = parsePublishedDate(item.pubDate, sourceName, url);
 
       const articleId = generateNewsId(url, cleanTitle);
 

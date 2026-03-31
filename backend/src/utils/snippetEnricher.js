@@ -167,4 +167,62 @@ function isTitleLike(title, snippet) {
   return false;
 }
 
-module.exports = { enrichSnippets };
+/**
+ * Infer article source from URL domain when source field is missing/generic.
+ * @param {string} url
+ * @returns {string|null}
+ */
+function inferSourceFromUrl(url) {
+  if (!url) return null;
+  try {
+    const hostname = new URL(url).hostname.replace(/^(www|m|n|biz|news)\./i, '');
+    const DOMAIN_MAP = {
+      'naver.com': '네이버',
+      'daum.net': '다음',
+      'chosun.com': '조선일보',
+      'joongang.co.kr': '중앙일보',
+      'donga.com': '동아일보',
+      'hani.co.kr': '한겨레',
+      'khan.co.kr': '경향신문',
+      'mt.co.kr': '머니투데이',
+      'sedaily.com': '서울경제',
+      'etnews.com': '전자신문',
+      'yonhap.co.kr': '연합뉴스',
+      'yna.co.kr': '연합뉴스',
+      'mbc.co.kr': 'MBC',
+      'kbs.co.kr': 'KBS',
+      'sbs.co.kr': 'SBS',
+    };
+    return DOMAIN_MAP[hostname] || hostname.split('.')[0];
+  } catch {
+    return null;
+  }
+}
+
+const LLM_SNIPPET_MAX = 30; // 최대 LLM 스니펫 생성 수 (API 호출 비용 제어)
+
+/**
+ * LLM fallback: generate short snippets for articles still missing one.
+ * Capped at LLM_SNIPPET_MAX to avoid excessive API calls.
+ * @param {Array} articles - mutable; sets article.snippet in-place
+ * @param {object} llmService - CerebrasLLMService instance
+ */
+async function generateSnippetsWithLLM(articles, llmService) {
+  const noSnippet = articles.filter(a => !a.snippet).slice(0, LLM_SNIPPET_MAX);
+  if (noSnippet.length === 0 || !llmService) return;
+
+  console.log(`[ENRICH] LLM snippet fallback for ${noSnippet.length} articles (capped at ${LLM_SNIPPET_MAX})`);
+
+  const BATCH = 10;
+  for (let i = 0; i < noSnippet.length; i += BATCH) {
+    const batch = noSnippet.slice(i, i + BATCH);
+    try {
+      const snippets = await llmService.generateSnippets(batch);
+      batch.forEach((a, j) => { if (snippets[j]) a.snippet = snippets[j]; });
+    } catch (err) {
+      console.warn(`[ENRICH] LLM snippet batch failed: ${err.message}`);
+    }
+  }
+}
+
+module.exports = { enrichSnippets, inferSourceFromUrl, generateSnippetsWithLLM };

@@ -19,6 +19,9 @@ const CLEAN_PATTERNS = [
  * @returns {Promise<string|null>} 정제된 본문, 실패 시 null
  */
 async function fetchArticleBody(url) {
+  // Google News RSS redirect URLs cannot be fetched directly (JS-based redirect)
+  if (!url || url.includes('news.google.com')) return null;
+
   try {
     const response = await axios.get(url, {
       headers: {
@@ -53,7 +56,8 @@ async function fetchArticleBody(url) {
     if (text.length < 200) return null;
 
     return text;
-  } catch {
+  } catch (err) {
+    console.warn(`[ArticleFetcher] Failed ${url?.slice(0, 80)}: ${err.code || err.message}`);
     return null;
   }
 }

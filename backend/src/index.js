@@ -28,7 +28,7 @@ const naverService = new NaverNewsService();
 const { DaumNewsService } = require('./services/daumNews');
 const daumService = new DaumNewsService();
 
-const { enrichSnippets } = require('./utils/snippetEnricher');
+const { enrichSnippets, inferSourceFromUrl, generateSnippetsWithLLM } = require('./utils/snippetEnricher');
 
 // RSS Parser (always available)
 const rssParser = new RSSParserService();
@@ -373,6 +373,11 @@ app.post('/api/news/search', async (req, res) => {
     // Enrich snippets with real article descriptions
     await enrichSnippets(limitedArticles);
 
+    // Infer missing sources from URL domain
+    for (const a of limitedArticles) {
+      if (!a.source) a.source = inferSourceFromUrl(a.url) || 'Unknown';
+    }
+
     const response = {
       articles: limitedArticles,
       total: limitedArticles.length,
@@ -468,6 +473,14 @@ app.post('/api/news/semantic-search', async (req, res) => {
 
     // Enrich snippets with real article descriptions
     await enrichSnippets(articlesWithScores);
+
+    // Infer missing sources from URL domain
+    for (const a of articlesWithScores) {
+      if (!a.source) a.source = inferSourceFromUrl(a.article?.url || a.url) || 'Unknown';
+    }
+
+    // LLM fallback for articles still missing snippets
+    if (llmService) await generateSnippetsWithLLM(articlesWithScores, llmService);
 
     const response = {
       articles: articlesWithScores,
@@ -567,7 +580,13 @@ app.post('/api/news/analyze', async (req, res) => {
     const { chunkText } = require('./services/chunkingService');
 
     const FETCH_LIMIT = 15;
-    const articlesForFetch = articlesToAnalyze.slice(0, FETCH_LIMIT);
+    // Google News RSS URLs can't be fetched directly — prefer direct newspaper URLs
+    const sortedForFetch = [...articlesToAnalyze].sort((a, b) => {
+      const aIsGoogle = (a.url || '').includes('news.google.com') ? 1 : 0;
+      const bIsGoogle = (b.url || '').includes('news.google.com') ? 1 : 0;
+      return aIsGoogle - bIsGoogle;
+    });
+    const articlesForFetch = sortedForFetch.slice(0, FETCH_LIMIT);
 
     console.log(`[RAG] Fetching full bodies for ${articlesForFetch.length} articles...`);
     const articlesWithBody = await fetchArticleBodies(articlesForFetch);
@@ -585,7 +604,7 @@ app.post('/api/news/analyze', async (req, res) => {
 
     let contextChunks = null;
     if (allChunks.length > 0 && embeddingService) {
-      contextChunks = await embeddingService.rankChunksBySimilarity(q, allChunks, 15);
+      contextChunks = await embeddingService.rankChunksBySimilarity(q, allChunks, 10);
       console.log(`[RAG] Top chunks selected: ${contextChunks.length}`);
     }
 
