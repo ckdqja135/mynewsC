@@ -9,6 +9,10 @@ const path = require('path');
 
 const KEYWORDS_FILE = path.join(__dirname, '..', '..', 'data', 'sentiment', 'custom_keywords.json');
 
+const ONNX_MODELS_ROOT = path.join(__dirname, '..', '..', '..', 'ml', 'models');
+const ONNX_MODEL_ID = 'sentiment/onnx';
+const ONNX_MODEL_FILE = path.join(ONNX_MODELS_ROOT, 'sentiment', 'onnx', 'onnx', 'model.onnx');
+
 const DEFAULT_NEGATIVE_KEYWORDS = [
   '이물질 검출', '리콜', '회수 조치', '사망자', '사망 사고', '폭발 사고', '화재 발생',
   '중상자', '사상자 발생', '오염 물질', '유해 물질', '독성 물질',
@@ -41,6 +45,32 @@ class ArticleSentimentClassifier {
     const loaded = this._loadKeywords();
     this.forceNegativeKeywords = loaded.negative;
     this.forcePositiveKeywords = loaded.positive;
+
+    this._onnxPipeline = null;
+    this._onnxLoading = null;
+  }
+
+  _isOnnxAvailable() {
+    return fs.existsSync(ONNX_MODEL_FILE);
+  }
+
+  async _loadOnnxPipeline() {
+    if (this._onnxPipeline) return this._onnxPipeline;
+    if (this._onnxLoading) return this._onnxLoading;
+
+    this._onnxLoading = (async () => {
+      const { pipeline, env } = await import('@xenova/transformers');
+      env.localModelPath = ONNX_MODELS_ROOT;
+      const pipe = await pipeline('text-classification', ONNX_MODEL_ID, { local_files_only: true, quantized: false });
+      this._onnxPipeline = pipe;
+      return pipe;
+    })();
+
+    try {
+      return await this._onnxLoading;
+    } finally {
+      this._onnxLoading = null;
+    }
   }
 
   /**
@@ -367,7 +397,14 @@ class ArticleSentimentClassifier {
 
     const LOCAL_MODEL_MIN_ACCURACY = 0.80;
 
-    // 로컬 모델 사용 가능 여부 확인 (forceLLM이면 무시)
+    if (!forceLLM && this._isOnnxAvailable()) {
+      try {
+        return await this._classifyWithOnnxModel(articles);
+      } catch (err) {
+        console.warn(`[ArticleSentimentClassifier] ONNX model failed, falling back: ${err.message}`);
+      }
+    }
+
     const canUseLocal = !forceLLM
       && sentimentTrainer
       && sentimentTrainer.classifier
@@ -379,6 +416,51 @@ class ArticleSentimentClassifier {
     }
 
     return this._classifyWithLLM(articles, llmService, query, sentimentTrainer);
+  }
+
+  async _classifyWithOnnxModel(articles) {
+    const pipe = await this._loadOnnxPipeline();
+    console.log(`[ArticleSentimentClassifier] Using ONNX model for ${articles.length} articles`);
+
+    const texts = articles.map(a => a.title || '');
+    const raw = await pipe(texts, { topk: 1 });
+    const predictions = Array.isArray(raw[0]) ? raw.map(r => r[0]) : raw;
+
+    let forceOverrides = 0;
+    const result = articles.map((article, i) => {
+      const pred = predictions[i] || { label: 'neutral', score: 0 };
+      const confidence = pred.score || 0;
+
+      if (confidence < 0.5) {
+        const forced = this.checkForceKeywords(article);
+        if (forced) {
+          forceOverrides++;
+          return {
+            ...article,
+            sentiment: forced,
+            sentimentScore: 100,
+            matchedKeywords: [],
+            classificationMethod: 'onnx+forced',
+            localConfidence: confidence,
+          };
+        }
+      }
+
+      return {
+        ...article,
+        sentiment: pred.label,
+        sentimentScore: Math.round(confidence * 100),
+        matchedKeywords: [],
+        classificationMethod: 'onnx',
+        localConfidence: confidence,
+      };
+    });
+
+    if (forceOverrides > 0) {
+      console.log(`[ArticleSentimentClassifier] Force keyword overrides: ${forceOverrides} articles`);
+    }
+    console.log(`[ArticleSentimentClassifier] ONNX classification complete`);
+    return result;
   }
 
   /**
