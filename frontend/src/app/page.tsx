@@ -375,6 +375,7 @@ export default function Home() {
   const [analysisLoading, setAnalysisLoading] = useState<boolean>(false);
   const [analysisError, setAnalysisError] = useState<string>('');
   const [feedbackMap, setFeedbackMap] = useState<Record<string, 'like' | 'dislike'>>({});
+  const [sentimentLabelMap, setSentimentLabelMap] = useState<Record<string, 'positive' | 'neutral' | 'negative'>>({});
   const [showAnalysisPanel, setShowAnalysisPanel] = useState<boolean>(true);
   const [analysisStep, setAnalysisStep] = useState<string>('');
   const [progressPercent, setProgressPercent] = useState<number>(0);
@@ -408,6 +409,13 @@ export default function Home() {
   const [defaultNegativeKeywords, setDefaultNegativeKeywords] = useState<string[]>([]);
   const [newPositiveKeyword, setNewPositiveKeyword] = useState('');
   const [newNegativeKeyword, setNewNegativeKeyword] = useState('');
+
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem('sentimentLabels');
+      if (saved) setSentimentLabelMap(JSON.parse(saved));
+    } catch {}
+  }, []);
 
   useEffect(() => {
     // 검색 히스토리 로드
@@ -1088,6 +1096,24 @@ export default function Home() {
       setFeedbackMap(prev => ({ ...prev, [articleId]: feedback }));
     } catch (err) {
       console.error('Feedback failed:', err);
+    }
+  };
+
+  const handleSentimentCorrection = async (
+    articleId: string,
+    text: string,
+    label: 'positive' | 'neutral' | 'negative'
+  ) => {
+    if (sentimentLabelMap[articleId]) return;
+    try {
+      await NewsApiService.submitSentimentLabel({ text, label, articleId });
+      setSentimentLabelMap(prev => {
+        const next = { ...prev, [articleId]: label };
+        try { localStorage.setItem('sentimentLabels', JSON.stringify(next)); } catch {}
+        return next;
+      });
+    } catch (err) {
+      console.error('Sentiment correction failed:', err);
     }
   };
 
@@ -1939,6 +1965,31 @@ export default function Home() {
                           {(article as any).sentiment === 'positive' ? '🟢 긍정' :
                            (article as any).sentiment === 'negative' ? '🔴 부정' : '🟡 중립'}
                         </span>
+                      )}
+                      {searchMode === 'semantic' && analysisData && (article as any).sentiment && (
+                        <div className={styles.sentimentCorrection}>
+                          {sentimentLabelMap[article.id] ? (
+                            <span className={styles.sentimentCorrectionDone}>
+                              교정됨: {sentimentLabelMap[article.id] === 'positive' ? '🟢 긍정' :
+                                       sentimentLabelMap[article.id] === 'negative' ? '🔴 부정' : '🟡 중립'}
+                            </span>
+                          ) : (
+                            <>
+                              <span className={styles.sentimentCorrectionLabel}>교정:</span>
+                              {(['positive', 'neutral', 'negative'] as const).map(label => (
+                                <button
+                                  key={label}
+                                  type="button"
+                                  className={styles.sentimentCorrectionBtn}
+                                  onClick={() => handleSentimentCorrection(article.id, article.title, label)}
+                                  title={`${label === 'positive' ? '긍정' : label === 'neutral' ? '중립' : '부정'}으로 교정`}
+                                >
+                                  {label === 'positive' ? '🟢' : label === 'neutral' ? '🟡' : '🔴'}
+                                </button>
+                              ))}
+                            </>
+                          )}
+                        </div>
                       )}
                       {hasSimilarityScore && (
                         <span

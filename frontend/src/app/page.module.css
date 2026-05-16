@@ -3024,6 +3024,41 @@
   border-color: var(--accent-color) !important;
 }
 
+/* 감성 분류 교정 UI */
+.sentimentCorrection {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.sentimentCorrectionLabel {
+  font-size: 11px;
+  color: var(--text-secondary);
+  margin-right: 2px;
+}
+
+.sentimentCorrectionBtn {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: 10px;
+  padding: 2px 8px;
+  font-size: 13px;
+  line-height: 1;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.sentimentCorrectionBtn:hover {
+  background: var(--bg-primary);
+  border-color: var(--accent-color);
+}
+
+.sentimentCorrectionDone {
+  font-size: 11px;
+  color: var(--text-secondary);
+  font-style: italic;
+}
+
 /* 분석 플레이스홀더 */
 .analysisPlaceholder {
   text-align: center;

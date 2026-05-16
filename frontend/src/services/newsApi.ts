@@ -192,6 +192,16 @@ export class NewsApiService {
     return response.data;
   }
 
+  // 감성 분류 교정 라벨 제출
+  static async submitSentimentLabel(params: {
+    text: string;
+    label: 'positive' | 'neutral' | 'negative';
+    articleId?: string;
+  }): Promise<{ status: string }> {
+    const response = await apiClient.post('/sentiment/label', params);
+    return response.data;
+  }
+
   static async healthCheck(): Promise<{ status: string }> {
     const response = await apiClient.get('/health');
     return response.data;
