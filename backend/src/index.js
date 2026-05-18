@@ -28,7 +28,7 @@ const naverService = new NaverNewsService();
 const { DaumNewsService } = require('./services/daumNews');
 const daumService = new DaumNewsService();
 
-const { enrichSnippets, inferSourceFromUrl, generateSnippetsWithLLM } = require('./utils/snippetEnricher');
+const { enrichSnippets, inferSourceFromUrl } = require('./utils/snippetEnricher');
 
 // RSS Parser (always available)
 const rssParser = new RSSParserService();
@@ -482,9 +482,6 @@ app.post('/api/news/semantic-search', async (req, res) => {
     for (const a of articlesWithScores) {
       if (!a.source) a.source = inferSourceFromUrl(a.article?.url || a.url) || 'Unknown';
     }
-
-    // LLM fallback for articles still missing snippets
-    if (llmService) await generateSnippetsWithLLM(articlesWithScores, llmService);
 
     const response = {
       articles: articlesWithScores,

@@ -379,53 +379,6 @@ Focus on factual, actionable information. Respond ONLY with valid JSON.`;
   }
 
   /**
-   * 스니펫이 없는 기사들의 제목으로 짧은 요약 생성 (LLM 스니펫 fallback)
-   * @param {Array} articles - [{title, source, ...}]
-   * @returns {Promise<string[]>} 각 기사의 2문장 요약 (실패 시 null)
-   */
-  async generateSnippets(articles) {
-    if (!articles || articles.length === 0) return [];
-
-    const titlesText = articles.map((a, i) =>
-      `${i + 1}. [${a.source || '미상'}] ${a.title}`
-    ).join('\n');
-
-    const prompt = `아래 뉴스 기사 제목들을 보고, 각각 2문장 이내의 간결한 한국어 요약을 생성하세요.
-제목에 있는 정보만 활용하고, 추측은 최소화하세요.
-
-${titlesText}
-
-각 줄에 번호와 요약을 출력하세요 (예: "1. 요약 내용"):`;
-
-    try {
-      const response = await this.client.chat.completions.create({
-        model: this.model,
-        messages: [
-          { role: 'system', content: '뉴스 제목을 보고 2문장 이내 요약을 생성하는 어시스턴트입니다. 번호와 요약만 출력하세요.' },
-          { role: 'user', content: prompt },
-        ],
-        temperature: 0.2,
-        max_tokens: articles.length * 60,
-      });
-
-      const text = response.choices[0].message.content.trim();
-      const results = articles.map(() => null);
-
-      for (const line of text.split('\n')) {
-        const match = line.match(/^(\d+)\.\s*(.+)/);
-        if (match) {
-          const idx = parseInt(match[1]) - 1;
-          if (idx >= 0 && idx < articles.length) results[idx] = match[2].trim();
-        }
-      }
-      return results;
-    } catch (err) {
-      console.warn(`[LLM] generateSnippets failed: ${err.message}`);
-      return articles.map(() => null);
-    }
-  }
-
-  /**
    * 기사들의 쿼리 관련도를 LLM으로 리랭킹
    * @param {Array} articles - 기사 배열 ({title, snippet, ...})
    * @param {string} query - 검색 쿼리

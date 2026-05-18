@@ -199,30 +199,4 @@ function inferSourceFromUrl(url) {
   }
 }
 
-const LLM_SNIPPET_MAX = 30; // 최대 LLM 스니펫 생성 수 (API 호출 비용 제어)
-
-/**
- * LLM fallback: generate short snippets for articles still missing one.
- * Capped at LLM_SNIPPET_MAX to avoid excessive API calls.
- * @param {Array} articles - mutable; sets article.snippet in-place
- * @param {object} llmService - CerebrasLLMService instance
- */
-async function generateSnippetsWithLLM(articles, llmService) {
-  const noSnippet = articles.filter(a => !a.snippet).slice(0, LLM_SNIPPET_MAX);
-  if (noSnippet.length === 0 || !llmService) return;
-
-  console.log(`[ENRICH] LLM snippet fallback for ${noSnippet.length} articles (capped at ${LLM_SNIPPET_MAX})`);
-
-  const BATCH = 10;
-  for (let i = 0; i < noSnippet.length; i += BATCH) {
-    const batch = noSnippet.slice(i, i + BATCH);
-    try {
-      const snippets = await llmService.generateSnippets(batch);
-      batch.forEach((a, j) => { if (snippets[j]) a.snippet = snippets[j]; });
-    } catch (err) {
-      console.warn(`[ENRICH] LLM snippet batch failed: ${err.message}`);
-    }
-  }
-}
-
-module.exports = { enrichSnippets, inferSourceFromUrl, generateSnippetsWithLLM };
+module.exports = { enrichSnippets, inferSourceFromUrl };
