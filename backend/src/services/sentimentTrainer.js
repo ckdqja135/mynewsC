@@ -282,11 +282,18 @@ class SentimentTrainer {
 
   /**
    * 수동 라벨 추가
+   * - 같은 text의 LLM 라벨이 있으면 제거하고 manual로 교체 (사용자 피드백 우선)
    */
   addLabel(text, label, articleId = null) {
     if (!['positive', 'negative', 'neutral'].includes(label)) {
       throw new Error('Label must be positive, negative, or neutral');
     }
+
+    const before = this.labeledData.length;
+    this.labeledData = this.labeledData.filter(
+      d => !(d.text === text && d.source === 'llm')
+    );
+    const removed = before - this.labeledData.length;
 
     const entry = {
       text,
@@ -298,6 +305,10 @@ class SentimentTrainer {
 
     this.labeledData.push(entry);
     this._saveLabeledData();
+
+    if (removed > 0) {
+      console.log(`[SentimentTrainer] Manual label replaced ${removed} LLM label(s) for: "${text.slice(0, 40)}..."`);
+    }
 
     return entry;
   }
@@ -328,8 +339,19 @@ class SentimentTrainer {
       return { added: 0, skipped: 0, total: this.labeledData.length };
     }
 
+    const PER_QUERY_CAP = 100;
+
     // 기존 텍스트 Set으로 O(1) 중복 체크
     const existingTexts = new Set(this.labeledData.map(d => d.text));
+    // manual 라벨은 LLM이 덮을 수 없도록 영구 잠금
+    const lockedTexts = new Set(
+      this.labeledData.filter(d => d.source === 'manual').map(d => d.text)
+    );
+    // 쿼리당 LLM 라벨 개수 (편향 방지)
+    let queryLlmCount = query
+      ? this.labeledData.filter(d => d.source === 'llm' && d.query === query).length
+      : 0;
+    const queryCapped = query && queryLlmCount >= PER_QUERY_CAP;
 
     let added = 0;
     let skipped = 0;
@@ -347,8 +369,20 @@ class SentimentTrainer {
         continue;
       }
 
+      // manual 라벨 보호 (사용자 피드백 우선)
+      if (lockedTexts.has(text)) {
+        skipped++;
+        continue;
+      }
+
       // 중복 제거 (제목 기준)
       if (existingTexts.has(text)) {
+        skipped++;
+        continue;
+      }
+
+      // 쿼리당 캡 도달 시 더 안 받음 (도메인 편향 방지)
+      if (query && queryLlmCount >= PER_QUERY_CAP) {
         skipped++;
         continue;
       }
@@ -364,7 +398,12 @@ class SentimentTrainer {
       });
 
       existingTexts.add(text);
+      queryLlmCount++;
       added++;
+    }
+
+    if (queryCapped) {
+      console.log(`[SentimentTrainer] Query "${query}" already at cap (${PER_QUERY_CAP}), skipped ${skipped} LLM labels`);
     }
 
     if (added > 0) {
