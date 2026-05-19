@@ -12,7 +12,7 @@ const fs = require('fs');
 const path = require('path');
 const axios = require('axios');
 
-// ==================== Logistic Regression ====================
+// ==================== Logistic Regression =====================
 
 class LogisticRegression {
   constructor(inputDim, numClasses) {
