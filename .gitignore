@@ -30,6 +30,7 @@ backend/data/
 *.db
 *.sqlite
 *.sqlite3
+backend/node_modules/
 
 # Environment variables
 .env

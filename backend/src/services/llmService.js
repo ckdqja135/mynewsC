@@ -6,8 +6,29 @@ class CerebrasLLMService {
       apiKey,
       baseURL: 'https://api.cerebras.ai/v1',
     });
-    // Cerebras models: llama3.1-8b, llama3.3-70b
-    this.model = 'llama3.1-8b';
+    // Cerebras 무료 티어 현행 모델: zai-glm-4.7, gpt-oss-120b
+    // 모델이 폐기되면 코드 수정 없이 .env의 CEREBRAS_MODEL 값만 바꾸면 됨
+    this.model = process.env.CEREBRAS_MODEL || 'zai-glm-4.7';
+    // 추론(reasoning) 모델(GLM/gpt-oss)은 감성 분류·랭킹 같은 구조적 작업에 추론이 불필요.
+    // 추론을 끄면 토큰/속도가 크게 절약되고, 추론에 토큰을 다 써서 답(content)이 비는 문제도 방지됨.
+    // 비추론 모델(gemma 등)로 바꿔 파라미터가 거부되면 .env에 CEREBRAS_REASONING_EFFORT= (빈값) 설정.
+    this.reasoningEffort = process.env.CEREBRAS_REASONING_EFFORT ?? 'none';
+  }
+
+  // reasoning_effort 파라미터 (빈 문자열이면 파라미터 자체를 생략)
+  _reasoningParam() {
+    return this.reasoningEffort ? { reasoning_effort: this.reasoningEffort } : {};
+  }
+
+  // LLM 응답에서 content를 안전하게 추출. 비어 있으면(추론 잘림/오류) 명확히 throw.
+  _extractContent(response, label = 'LLM') {
+    const choice = response && response.choices && response.choices[0];
+    const content = choice && choice.message && choice.message.content;
+    if (!content || !content.trim()) {
+      const finish = (choice && choice.finish_reason) || 'unknown';
+      throw new Error(`빈 LLM 응답 [${label}] (finish_reason: ${finish}). 추론 모델이면 max_tokens 부족 또는 CEREBRAS_REASONING_EFFORT 확인.`);
+    }
+    return content;
   }
 
   _prepareArticlesContext(articles, maxArticles = 20) {
@@ -125,9 +146,10 @@ Respond ONLY with valid JSON. No additional text.`;
       ],
       temperature: 0.3,
       max_tokens: 2000,
+      ...this._reasoningParam(),
     });
 
-    const resultText = response.choices[0].message.content.trim();
+    const resultText = this._extractContent(response, 'analyze').trim();
 
     const confidence_score = this._calcConfidence(chunks);
     const sources = chunks
@@ -202,9 +224,10 @@ Respond ONLY with valid JSON.`;
       ],
       temperature: 0.2,
       max_tokens: 1500,
+      ...this._reasoningParam(),
     });
 
-    const resultText = response.choices[0].message.content.trim();
+    const resultText = this._extractContent(response, 'analyze').trim();
 
     const confidence_score = this._calcConfidence(chunks);
     const sources = chunks
@@ -273,9 +296,10 @@ Respond ONLY with valid JSON.`;
       ],
       temperature: 0.3,
       max_tokens: 1500,
+      ...this._reasoningParam(),
     });
 
-    const resultText = response.choices[0].message.content.trim();
+    const resultText = this._extractContent(response, 'analyze').trim();
 
     const confidence_score = this._calcConfidence(chunks);
     const sources = chunks
@@ -339,9 +363,10 @@ Focus on factual, actionable information. Respond ONLY with valid JSON.`;
       ],
       temperature: 0.2,
       max_tokens: 1000,
+      ...this._reasoningParam(),
     });
 
-    const resultText = response.choices[0].message.content.trim();
+    const resultText = this._extractContent(response, 'analyze').trim();
 
     const confidence_score = this._calcConfidence(chunks);
     const sources = chunks
@@ -443,9 +468,10 @@ ${articlesText}
           ],
           temperature: 0.1,
           max_tokens: articles.length * 10,
+          ...this._reasoningParam(),
         });
 
-        const text = response.choices[0].message.content.trim();
+        const text = this._extractContent(response, 'rerank').trim();
         const scores = articles.map(() => 3); // default: 중간
 
         for (const line of text.split('\n')) {
@@ -471,7 +497,11 @@ ${articlesText}
           await new Promise(r => setTimeout(r, delay));
           continue;
         }
-        console.error(`[LLM Rerank] Batch rerank failed [${error.status || '?'}]: ${error.message}`);
+        if (error.status === 404 || (error.message && error.message.includes('404'))) {
+          console.error(`[LLM Rerank] ⚠️ 모델 '${this.model}'을(를) Cerebras가 인식하지 못함(404) → CEREBRAS_MODEL 확인 필요. 중간값(3)으로 폴백합니다.`);
+        } else {
+          console.error(`[LLM Rerank] Batch rerank failed [${error.status || '?'}]: ${error.message}`);
+        }
         return articles.map(() => 3); // 실패 시 중간값으로 fallback
       }
     }
@@ -519,9 +549,10 @@ ${articlesText}
           ],
           temperature: 0.1,
           max_tokens: articles.length * 15,
+          ...this._reasoningParam(),
         });
 
-        const text = response.choices[0].message.content.trim().toLowerCase();
+        const text = this._extractContent(response, 'classify').trim().toLowerCase();
         console.log(`[LLM] Raw response:\n${text}`);
         const results = articles.map(() => 'neutral');
 
@@ -553,7 +584,11 @@ ${articlesText}
           await new Promise(r => setTimeout(r, delay));
           continue;
         }
-        console.error(`[LLM] Batch sentiment failed [${error.status || '?'}]: ${error.message}`);
+        if (error.status === 404 || (error.message && error.message.includes('404'))) {
+          console.error(`[LLM] ⚠️ 모델 '${this.model}'을(를) Cerebras가 인식하지 못함(404). 폐기되었거나 잘못된 모델 ID일 수 있음 → CEREBRAS_MODEL 확인 필요. 전체 기사를 neutral로 폴백합니다.`);
+        } else {
+          console.error(`[LLM] Batch sentiment failed [${error.status || '?'}]: ${error.message}`);
+        }
         return articles.map(() => 'neutral');
       }
     }
