@@ -919,8 +919,8 @@ export default function Home() {
 
   // Telegram 테스트 전송
   const handleSendTestTelegram = async () => {
-    if (!telegramQuery || (!telegramBotToken && !telegramHasEnvBotToken) || (!telegramChatId && !telegramHasEnvChatId)) {
-      setTelegramTestMessage('검색어를 입력하세요 (봇 토큰/Chat ID는 입력하거나 서버 .env에 설정되어 있어야 합니다)');
+    if (!telegramQuery) {
+      setTelegramTestMessage('⚠️ 검색어를 입력하세요');
       return;
     }
 
@@ -3321,7 +3321,7 @@ export default function Home() {
                 <div className={styles.settingItem}>
                   <button
                     onClick={handleSendTestTelegram}
-                    disabled={telegramTestLoading || !telegramQuery || (!telegramBotToken && !telegramHasEnvBotToken) || (!telegramChatId && !telegramHasEnvChatId)}
+                    disabled={telegramTestLoading || !telegramQuery}
                     className={styles.testButton}
                     style={{
                       width: '100%',
@@ -3332,8 +3332,8 @@ export default function Home() {
                       borderRadius: '8px',
                       fontSize: '15px',
                       fontWeight: 600,
-                      cursor: telegramTestLoading || !telegramQuery || (!telegramBotToken && !telegramHasEnvBotToken) || (!telegramChatId && !telegramHasEnvChatId) ? 'not-allowed' : 'pointer',
-                      opacity: telegramTestLoading || !telegramQuery || (!telegramBotToken && !telegramHasEnvBotToken) || (!telegramChatId && !telegramHasEnvChatId) ? 0.5 : 1
+                      cursor: telegramTestLoading || !telegramQuery ? 'not-allowed' : 'pointer',
+                      opacity: telegramTestLoading || !telegramQuery ? 0.5 : 1
                     }}
                   >
                     {telegramTestLoading ? '전송 중...' : '테스트 전송'}
