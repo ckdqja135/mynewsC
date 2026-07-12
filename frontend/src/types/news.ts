@@ -140,3 +140,37 @@ export interface LarkSendResponse {
   totalArticles: number;
   timestamp: string;
 }
+
+// Telegram 설정
+export interface TelegramConfig {
+  enabled: boolean;
+  schedule: string; // cron expression
+  botToken: string;
+  chatId: string;
+  query: string;
+  sentimentTypes: SentimentType[];
+  num: number;
+  excluded_sources: string[];
+  // backend/.env에 크리덴셜이 있는지 여부 (실제 값은 전달되지 않음)
+  hasEnvBotToken?: boolean;
+  hasEnvChatId?: boolean;
+}
+
+// Telegram 수동 전송 요청
+export interface TelegramSendRequest {
+  botToken: string;
+  chatId: string;
+  query: string;
+  sentimentTypes: SentimentType[];
+  num?: number;
+  excluded_sources?: string[];
+}
+
+// Telegram 전송 응답
+export interface TelegramSendResponse {
+  success: boolean;
+  message: string;
+  articlesSent: number;
+  totalArticles: number;
+  timestamp: string;
+}

@@ -168,7 +168,7 @@
 .testButton {
   width: 100%;
   padding: 14px 24px;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  background: var(--accent-color);
   color: white;
   border: none;
   border-radius: 8px;
@@ -200,7 +200,7 @@
 .saveButton {
   width: 100%;
   padding: 16px 32px;
-  background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%);
+  background: var(--accent-color);
   color: white;
   border: none;
   border-radius: 8px;

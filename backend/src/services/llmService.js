@@ -5,6 +5,9 @@ class CerebrasLLMService {
     this.client = new OpenAI({
       apiKey,
       baseURL: 'https://api.cerebras.ai/v1',
+      // Cerebras 무료 티어는 분당 요청/토큰 한도가 빡빡해 429가 잦음.
+      // SDK가 429/5xx를 지수 백오프로 자동 재시도하도록 재시도 횟수를 늘림.
+      maxRetries: 4,
     });
     // Cerebras 무료 티어 현행 모델: zai-glm-4.7, gpt-oss-120b
     // 모델이 폐기되면 코드 수정 없이 .env의 CEREBRAS_MODEL 값만 바꾸면 됨

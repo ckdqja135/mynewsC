@@ -15,7 +15,15 @@
       "Bash(npm install:*)",
       "Bash(npx next lint:*)",
       "Bash(npx tsc:*)",
-      "Bash(ls -la \"D:\\\\Project\\\\newsCrawling\\\\backend\\\\data\\\\sentiment\"\" 2>&1 || echo \"Directory does not exist \")"
+      "Bash(ls -la \"D:\\\\Project\\\\newsCrawling\\\\backend\\\\data\\\\sentiment\"\" 2>&1 || echo \"Directory does not exist \")",
+      "Skill(claude-api)",
+      "Bash(awk -F: '$1<=636 && $1>=520')",
+      "Bash(lsof -iTCP:8000 -sTCP:LISTEN -n -P)",
+      "Bash(lsof -iTCP:3000 -sTCP:LISTEN -n -P)",
+      "Bash(npm run *)",
+      "Bash(./node_modules/.bin/tsc --noEmit)",
+      "Bash(echo \"FRONTEND_TSC_EXIT=$?\")",
+      "Bash(TELEGRAM_BOT_TOKEN=111111111:AAEnvTokenEnvTokenEnvTokenEnvToken12 TELEGRAM_CHAT_ID=-1009998887776 node -e ' *)"
     ]
   }
 }

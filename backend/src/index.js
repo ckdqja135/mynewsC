@@ -75,6 +75,10 @@ try {
 const { LarkBotService } = require('./services/larkBot');
 const larkBot = new LarkBotService();
 
+// Telegram Bot Service
+const { TelegramBotService } = require('./services/telegramBot');
+const telegramBot = new TelegramBotService();
+
 // Scheduler Service
 const { SchedulerService } = require('./services/schedulerService');
 const scheduler = new SchedulerService();
@@ -107,6 +111,47 @@ function loadLarkConfigFromFile() {
     console.warn('[Lark] Failed to load config from file:', err.message);
   }
   return null;
+}
+
+// Telegram 설정 영구 저장 경로
+const TELEGRAM_CONFIG_FILE = require('path').join(__dirname, '..', 'data', 'telegram_config.json');
+
+function saveTelegramConfigToFile(config) {
+  try {
+    const dir = require('path').dirname(TELEGRAM_CONFIG_FILE);
+    if (!fs.existsSync(dir)) {
+      fs.mkdirSync(dir, { recursive: true });
+    }
+    fs.writeFileSync(TELEGRAM_CONFIG_FILE, JSON.stringify(config, null, 2), 'utf-8');
+    console.log('[Telegram] Config saved to file');
+  } catch (err) {
+    console.error('[Telegram] Failed to save config to file:', err.message);
+  }
+}
+
+function loadTelegramConfigFromFile() {
+  try {
+    if (fs.existsSync(TELEGRAM_CONFIG_FILE)) {
+      const data = JSON.parse(fs.readFileSync(TELEGRAM_CONFIG_FILE, 'utf-8'));
+      console.log('[Telegram] Config loaded from file');
+      return data;
+    }
+  } catch (err) {
+    console.warn('[Telegram] Failed to load config from file:', err.message);
+  }
+  return null;
+}
+
+// 봇 토큰 / chat_id 해석: 요청·설정값이 비어 있으면 backend/.env 값으로 폴백.
+// 토큰은 민감값이라 backend/.env(서버 사이드)에만 두고, 파일/프론트로 굳이 노출하지 않음.
+function resolveTelegramCreds(botToken, chatId) {
+  const resolvedToken = (botToken && String(botToken).trim())
+    ? String(botToken).trim()
+    : (process.env.TELEGRAM_BOT_TOKEN || '').trim();
+  const resolvedChatId = (chatId !== undefined && chatId !== null && String(chatId).trim())
+    ? String(chatId).trim()
+    : (process.env.TELEGRAM_CHAT_ID || '').trim();
+  return { botToken: resolvedToken, chatId: resolvedChatId };
 }
 
 // ==================== Helper functions ====================
@@ -1423,6 +1468,271 @@ app.delete('/api/lark/schedule-config', (req, res) => {
       }
     } catch (err) {
       console.warn('[Lark] Failed to restore scheduled job:', err.message);
+    }
+  }
+})();
+
+// ==================== Telegram Bot Endpoints ====================
+
+// 1. 수동 Telegram 전송
+app.post('/api/telegram/send-manual', async (req, res) => {
+  const { query, sentimentTypes, num = 20, excluded_sources = [] } = req.body;
+
+  // 봇 토큰 / chat_id: 요청값이 비어 있으면 backend/.env 값으로 폴백
+  const { botToken, chatId } = resolveTelegramCreds(req.body.botToken, req.body.chatId);
+
+  // 봇 토큰 / chat_id 검증
+  if (!telegramBot.validateBotToken(botToken)) {
+    return res.status(400).json({ detail: 'Invalid Telegram bot token (요청 또는 backend/.env의 TELEGRAM_BOT_TOKEN 확인)' });
+  }
+  if (!telegramBot.validateChatId(chatId)) {
+    return res.status(400).json({ detail: 'Invalid Telegram chat_id (요청 또는 backend/.env의 TELEGRAM_CHAT_ID 확인)' });
+  }
+
+  // LLM 서비스 확인
+  if (!llmService) {
+    return res.status(503).json({ detail: 'LLM service is not available' });
+  }
+
+  try {
+    console.log(`[Telegram] Manual send requested for query: ${query}`);
+
+    // 뉴스 수집
+    const articles = await fetchFromAllSources(query, 'ko', 'kr', num, excluded_sources);
+    const uniqueArticles = deduplicateAndFilter(articles, excluded_sources);
+
+    if (uniqueArticles.length === 0) {
+      return res.status(404).json({
+        code: 'NO_ARTICLES',
+        detail: `'${query}' 검색 결과 기사가 없습니다. 다른 검색어로 시도해보세요.`
+      });
+    }
+
+    console.log(`[Telegram] Fetched ${uniqueArticles.length} articles`);
+
+    // AI 분석
+    const analysis = await llmService.analyzeComprehensive(query, uniqueArticles.slice(0, 20));
+    console.log(`[Telegram] Analysis completed`);
+
+    // 감성 분류 (LLM 기반 개별 기사 분석 + 자동 라벨 수집)
+    const classifiedArticles = await sentimentClassifier.classifyArticlesWithLLM(uniqueArticles, llmService, query, sentimentTrainer);
+    console.log(`[Telegram] Articles classified by sentiment (LLM-based)`);
+
+    // 필터링
+    const filteredArticles = sentimentClassifier.filterBySentiment(classifiedArticles, sentimentTypes);
+    console.log(`[Telegram] Filtered to ${filteredArticles.length} articles for sentiment types: ${sentimentTypes.join(', ')}`);
+
+    if (filteredArticles.length === 0) {
+      const labels = (sentimentTypes || []).map(t => telegramBot.getSentimentLabel(t)).join('/');
+      return res.status(404).json({
+        code: 'NO_ARTICLES_FOR_FILTER',
+        detail: `선택한 감성 필터(${labels})에 해당하는 기사가 없습니다. 감성 필터를 넓히거나 다른 검색어로 시도해보세요.`
+      });
+    }
+
+    // Telegram 전송
+    await telegramBot.sendNewsDigest(botToken, chatId, query, filteredArticles.slice(0, 10), analysis, sentimentTypes);
+    console.log(`[Telegram] Message sent successfully`);
+
+    res.json({
+      success: true,
+      message: 'Telegram notification sent successfully',
+      articlesSent: Math.min(filteredArticles.length, 10),
+      totalArticles: filteredArticles.length,
+      timestamp: new Date().toISOString()
+    });
+  } catch (error) {
+    console.error('[Telegram] Send manual error:', error);
+    // Cerebras(LLM) 요청 한도 초과(429)는 일시적 → 명확한 안내로 변환
+    if (error && (error.status === 429 || /\b429\b|rate ?limit/i.test(error.message || ''))) {
+      return res.status(429).json({
+        code: 'LLM_RATE_LIMIT',
+        detail: 'AI 분석 요청 한도를 잠시 초과했습니다(Cerebras). 30~60초 후 다시 시도해주세요.'
+      });
+    }
+    res.status(500).json({ detail: error.message });
+  }
+});
+
+// Telegram 스케줄 작업 함수 (설정 저장 + 서버 시작 시 복원에서 공유)
+function createTelegramTaskFunction() {
+  return async (config) => {
+    console.log(`[Telegram Schedule] Running scheduled job for query: ${config.query}`);
+
+    try {
+      // 뉴스 수집
+      const articles = await fetchFromAllSources(
+        config.query,
+        'ko',
+        'kr',
+        config.num,
+        config.excluded_sources
+      );
+      const uniqueArticles = deduplicateAndFilter(articles, config.excluded_sources);
+
+      if (uniqueArticles.length === 0) {
+        console.warn(`[Telegram Schedule] No articles found for query: ${config.query}`);
+        return;
+      }
+
+      // AI 분석
+      const analysis = await llmService.analyzeComprehensive(config.query, uniqueArticles.slice(0, 20));
+
+      // 감성 분류 (LLM 기반 개별 기사 분석 + 자동 라벨 수집)
+      const classifiedArticles = await sentimentClassifier.classifyArticlesWithLLM(uniqueArticles, llmService, config.query, sentimentTrainer);
+
+      // 필터링
+      const filteredArticles = sentimentClassifier.filterBySentiment(
+        classifiedArticles,
+        config.sentimentTypes
+      );
+
+      if (filteredArticles.length === 0) {
+        console.warn(`[Telegram Schedule] No articles with sentiment types: ${config.sentimentTypes.join(', ')}`);
+        return;
+      }
+
+      // Telegram 전송 (토큰/chat_id는 실행 시점에 env 폴백 해석)
+      const { botToken, chatId } = resolveTelegramCreds(config.botToken, config.chatId);
+      await telegramBot.sendNewsDigest(
+        botToken,
+        chatId,
+        config.query,
+        filteredArticles.slice(0, 10),
+        analysis,
+        config.sentimentTypes
+      );
+
+      console.log(`[Telegram Schedule] Message sent successfully: ${filteredArticles.length} articles`);
+    } catch (error) {
+      console.error(`[Telegram Schedule] Job failed:`, error);
+    }
+  };
+}
+
+// 2. 스케줄 설정 저장
+app.post('/api/telegram/schedule-config', async (req, res) => {
+  const { enabled, schedule } = req.body;
+
+  // 항상 파일에 저장 (enabled 여부 상관없이 설정값 보존)
+  // 봇 토큰/chat_id가 비어 있어도 그대로 저장 — 실행 시 env로 폴백됨
+  saveTelegramConfigToFile(req.body);
+
+  try {
+    if (enabled) {
+      // 활성화 시에만 검증 (요청값이 비면 backend/.env 값으로 폴백)
+      const { botToken, chatId } = resolveTelegramCreds(req.body.botToken, req.body.chatId);
+      if (!scheduler.validateCronExpression(schedule)) {
+        return res.status(400).json({ detail: 'Invalid cron expression' });
+      }
+      if (!telegramBot.validateBotToken(botToken)) {
+        return res.status(400).json({ detail: 'Invalid Telegram bot token (요청 또는 backend/.env의 TELEGRAM_BOT_TOKEN 확인)' });
+      }
+      if (!telegramBot.validateChatId(chatId)) {
+        return res.status(400).json({ detail: 'Invalid Telegram chat_id (요청 또는 backend/.env의 TELEGRAM_CHAT_ID 확인)' });
+      }
+      const jobId = 'telegram-news-notification';
+
+      // 작업 추가/업데이트
+      const result = scheduler.addJob(jobId, schedule, req.body, createTelegramTaskFunction());
+
+      res.json({
+        success: true,
+        jobId: result.jobId,
+        nextRun: result.nextRun,
+        message: 'Scheduled notifications enabled'
+      });
+    } else {
+      // 비활성화
+      scheduler.removeJob('telegram-news-notification');
+      res.json({
+        success: true,
+        message: 'Scheduled notifications disabled'
+      });
+    }
+  } catch (error) {
+    console.error('[Telegram] Schedule config error:', error);
+    res.status(500).json({ detail: error.message });
+  }
+});
+
+// 3. 스케줄 설정 조회
+app.get('/api/telegram/schedule-config', (req, res) => {
+  try {
+    // backend/.env에 크리덴셜이 있는지 여부만 프론트에 전달 (실제 토큰 값은 노출하지 않음)
+    const hasEnvBotToken = !!(process.env.TELEGRAM_BOT_TOKEN || '').trim();
+    const hasEnvChatId = !!(process.env.TELEGRAM_CHAT_ID || '').trim();
+
+    const jobs = scheduler.listJobs();
+    const telegramJob = jobs.find(j => j.jobId === 'telegram-news-notification');
+
+    if (telegramJob && telegramJob.active) {
+      res.json({
+        enabled: true,
+        ...telegramJob.config,
+        hasEnvBotToken,
+        hasEnvChatId,
+        lastRun: telegramJob.lastRun,
+        nextRun: telegramJob.nextRun
+      });
+    } else {
+      // 스케줄러에 없으면 파일에서 로드 (서버 재시작 후 설정값 보존)
+      const savedConfig = loadTelegramConfigFromFile();
+      if (savedConfig) {
+        res.json({ ...savedConfig, hasEnvBotToken, hasEnvChatId });
+      } else {
+        res.json({ enabled: false, hasEnvBotToken, hasEnvChatId });
+      }
+    }
+  } catch (error) {
+    console.error('[Telegram] Get schedule config error:', error);
+    res.status(500).json({ detail: error.message });
+  }
+});
+
+// 4. 스케줄 설정 삭제
+app.delete('/api/telegram/schedule-config', (req, res) => {
+  try {
+    const removed = scheduler.removeJob('telegram-news-notification');
+
+    // 파일도 삭제
+    try {
+      if (fs.existsSync(TELEGRAM_CONFIG_FILE)) {
+        fs.unlinkSync(TELEGRAM_CONFIG_FILE);
+      }
+    } catch (e) { /* ignore */ }
+
+    if (removed) {
+      res.json({
+        success: true,
+        message: 'Scheduled notifications disabled'
+      });
+    } else {
+      res.json({
+        success: true,
+        message: 'No scheduled notifications to remove'
+      });
+    }
+  } catch (error) {
+    console.error('[Telegram] Delete schedule config error:', error);
+    res.status(500).json({ detail: error.message });
+  }
+});
+
+// ==================== Restore Telegram Schedule on Startup ====================
+
+(() => {
+  const savedConfig = loadTelegramConfigFromFile();
+  if (savedConfig && savedConfig.enabled && savedConfig.schedule) {
+    try {
+      // 저장된 값이 비어 있으면 backend/.env로 폴백해 복원 가능 여부 판단
+      const { botToken, chatId } = resolveTelegramCreds(savedConfig.botToken, savedConfig.chatId);
+      if (botToken && chatId && scheduler.validateCronExpression(savedConfig.schedule)) {
+        scheduler.addJob('telegram-news-notification', savedConfig.schedule, savedConfig, createTelegramTaskFunction());
+        console.log(`[Telegram] Restored scheduled job from saved config (query: "${savedConfig.query}")`);
+      }
+    } catch (err) {
+      console.warn('[Telegram] Failed to restore scheduled job:', err.message);
     }
   }
 })();

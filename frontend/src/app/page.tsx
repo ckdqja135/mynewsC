@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useMemo, useRef } from 'react';
 import { NewsApiService } from '@/services/newsApi';
-import type { NewsArticle, NewsArticleWithScore, SearchMode, NewsAnalysisResponse, SentimentType, LarkConfig, AnalysisSource } from '@/types/news';
+import type { NewsArticle, NewsArticleWithScore, SearchMode, NewsAnalysisResponse, SentimentType, LarkConfig, TelegramConfig, AnalysisSource } from '@/types/news';
 import styles from './page.module.css';
 import DatePicker from 'react-datepicker';
 import { ko } from 'date-fns/locale';
@@ -359,7 +359,7 @@ export default function Home() {
     window.addEventListener('open-settings', handler);
     return () => window.removeEventListener('open-settings', handler);
   }, []);
-  const [settingsTab, setSettingsTab] = useState<'auto-search' | 'lark' | 'keywords' | 'display'>('auto-search');
+  const [settingsTab, setSettingsTab] = useState<'auto-search' | 'lark' | 'telegram' | 'keywords' | 'display'>('auto-search');
   const [defaultQuery, setDefaultQuery] = useState<string>('');
   const [defaultSearchMode, setDefaultSearchMode] = useState<SearchMode>('keyword');
   const [defaultMinSimilarity, setDefaultMinSimilarity] = useState<number>(0.3);
@@ -401,6 +401,21 @@ export default function Home() {
   const [larkQuery, setLarkQuery] = useState('');
   const [larkTestLoading, setLarkTestLoading] = useState(false);
   const [larkTestMessage, setLarkTestMessage] = useState('');
+
+  // Telegram 설정 상태
+  const [telegramEnabled, setTelegramEnabled] = useState(false);
+  const [telegramBotToken, setTelegramBotToken] = useState('');
+  const [telegramChatId, setTelegramChatId] = useState('');
+  const [telegramScheduleText, setTelegramScheduleText] = useState('매일 오전 9시');
+  const [telegramSentimentTypes, setTelegramSentimentTypes] = useState<Set<SentimentType>>(
+    new Set(['negative'])
+  );
+  const [telegramQuery, setTelegramQuery] = useState('');
+  const [telegramTestLoading, setTelegramTestLoading] = useState(false);
+  const [telegramTestMessage, setTelegramTestMessage] = useState('');
+  // backend/.env에 봇 토큰/chat_id가 있으면 UI 입력을 비워도 됨
+  const [telegramHasEnvBotToken, setTelegramHasEnvBotToken] = useState(false);
+  const [telegramHasEnvChatId, setTelegramHasEnvChatId] = useState(false);
 
   // 감성 키워드 설정 상태
   const [customPositiveKeywords, setCustomPositiveKeywords] = useState<string[]>([]);
@@ -559,6 +574,31 @@ export default function Home() {
     };
 
     loadLarkConfig();
+
+    // Telegram 설정 로드
+    const loadTelegramConfig = async () => {
+      try {
+        const config = await NewsApiService.getTelegramSchedule();
+        if (config) {
+          // env 크리덴셜 유무는 활성화 여부와 무관하게 반영
+          setTelegramHasEnvBotToken(!!config.hasEnvBotToken);
+          setTelegramHasEnvChatId(!!config.hasEnvChatId);
+
+          if (config.enabled) {
+            setTelegramEnabled(true);
+            setTelegramBotToken(config.botToken || '');
+            setTelegramChatId(config.chatId || '');
+            setTelegramScheduleText(cronToNatural(config.schedule));
+            setTelegramQuery(config.query || '');
+            setTelegramSentimentTypes(new Set(config.sentimentTypes));
+          }
+        }
+      } catch (error) {
+        console.error('Failed to load Telegram config:', error);
+      }
+    };
+
+    loadTelegramConfig();
 
     // 감성 키워드 로드
     const loadKeywords = async () => {
@@ -877,6 +917,62 @@ export default function Home() {
     }
   };
 
+  // Telegram 테스트 전송
+  const handleSendTestTelegram = async () => {
+    if (!telegramQuery || (!telegramBotToken && !telegramHasEnvBotToken) || (!telegramChatId && !telegramHasEnvChatId)) {
+      setTelegramTestMessage('검색어를 입력하세요 (봇 토큰/Chat ID는 입력하거나 서버 .env에 설정되어 있어야 합니다)');
+      return;
+    }
+
+    setTelegramTestLoading(true);
+    setTelegramTestMessage('');
+
+    try {
+      const result = await NewsApiService.sendTelegramManual({
+        botToken: telegramBotToken,
+        chatId: telegramChatId,
+        query: telegramQuery,
+        sentimentTypes: Array.from(telegramSentimentTypes),
+        num: 20,
+        excluded_sources: Array.from(excludedSources)
+      });
+
+      setTelegramTestMessage(`✅ 전송 성공! ${result.articlesSent}개 기사 전송됨`);
+      setTimeout(() => setTelegramTestMessage(''), 5000);
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : '알 수 없는 오류';
+      // 결과 없음(검색 0건/필터 0건)이나 일시적 한도초과(429)는 '실패'가 아니라 안내로 표시
+      if (msg.includes('기사가 없습니다') || msg.includes('한도') || msg.includes('다시 시도')) {
+        setTelegramTestMessage(`⚠️ ${msg}`);
+      } else {
+        setTelegramTestMessage(`❌ 전송 실패: ${msg}`);
+      }
+    } finally {
+      setTelegramTestLoading(false);
+    }
+  };
+
+  // Telegram 설정 저장
+  const saveTelegramConfig = async () => {
+    try {
+      const config: TelegramConfig = {
+        enabled: telegramEnabled,
+        schedule: parseNaturalSchedule(telegramScheduleText)?.cron || '0 9 * * *',
+        botToken: telegramBotToken,
+        chatId: telegramChatId,
+        query: telegramQuery,
+        sentimentTypes: Array.from(telegramSentimentTypes),
+        num: maxArticles,
+        excluded_sources: Array.from(excludedSources)
+      };
+
+      await NewsApiService.saveTelegramSchedule(config);
+    } catch (error) {
+      console.error('Failed to save Telegram config:', error);
+      throw error;
+    }
+  };
+
   const saveAutoSearchSettings = async () => {
     const settings = {
       enabled: autoSearchEnabled,
@@ -899,6 +995,16 @@ export default function Home() {
         await saveLarkConfig();
       } catch (error) {
         alert('Lark 설정 저장 실패: ' + (error instanceof Error ? error.message : '알 수 없는 오류'));
+        return;
+      }
+    }
+
+    // Telegram 설정도 함께 저장
+    if (settingsTab === 'telegram') {
+      try {
+        await saveTelegramConfig();
+      } catch (error) {
+        alert('Telegram 설정 저장 실패: ' + (error instanceof Error ? error.message : '알 수 없는 오류'));
         return;
       }
     }
@@ -2566,12 +2672,13 @@ export default function Home() {
                 onClick={() => setSettingsTab('auto-search')}
                 style={{
                   flex: 1,
-                  padding: '16px',
+                  padding: '14px 8px',
+                  whiteSpace: 'nowrap',
                   background: settingsTab === 'auto-search' ? 'white' : 'transparent',
                   border: 'none',
                   borderBottom: settingsTab === 'auto-search' ? '3px solid #667eea' : 'none',
                   fontWeight: settingsTab === 'auto-search' ? 600 : 400,
-                  fontSize: '15px',
+                  fontSize: '14px',
                   cursor: 'pointer',
                   color: settingsTab === 'auto-search' ? '#667eea' : '#666',
                   transition: 'all 0.2s'
@@ -2583,12 +2690,13 @@ export default function Home() {
                 onClick={() => setSettingsTab('lark')}
                 style={{
                   flex: 1,
-                  padding: '16px',
+                  padding: '14px 8px',
+                  whiteSpace: 'nowrap',
                   background: settingsTab === 'lark' ? 'white' : 'transparent',
                   border: 'none',
                   borderBottom: settingsTab === 'lark' ? '3px solid #667eea' : 'none',
                   fontWeight: settingsTab === 'lark' ? 600 : 400,
-                  fontSize: '15px',
+                  fontSize: '14px',
                   cursor: 'pointer',
                   color: settingsTab === 'lark' ? '#667eea' : '#666',
                   transition: 'all 0.2s'
@@ -2597,15 +2705,34 @@ export default function Home() {
                 Lark 알림
               </button>
               <button
+                onClick={() => setSettingsTab('telegram')}
+                style={{
+                  flex: 1,
+                  padding: '14px 8px',
+                  whiteSpace: 'nowrap',
+                  background: settingsTab === 'telegram' ? 'white' : 'transparent',
+                  border: 'none',
+                  borderBottom: settingsTab === 'telegram' ? '3px solid #667eea' : 'none',
+                  fontWeight: settingsTab === 'telegram' ? 600 : 400,
+                  fontSize: '14px',
+                  cursor: 'pointer',
+                  color: settingsTab === 'telegram' ? '#667eea' : '#666',
+                  transition: 'all 0.2s'
+                }}
+              >
+                텔레그램 알림
+              </button>
+              <button
                 onClick={() => setSettingsTab('keywords')}
                 style={{
                   flex: 1,
-                  padding: '16px',
+                  padding: '14px 8px',
+                  whiteSpace: 'nowrap',
                   background: settingsTab === 'keywords' ? 'white' : 'transparent',
                   border: 'none',
                   borderBottom: settingsTab === 'keywords' ? '3px solid #667eea' : 'none',
                   fontWeight: settingsTab === 'keywords' ? 600 : 400,
-                  fontSize: '15px',
+                  fontSize: '14px',
                   cursor: 'pointer',
                   color: settingsTab === 'keywords' ? '#667eea' : '#666',
                   transition: 'all 0.2s'
@@ -2617,12 +2744,13 @@ export default function Home() {
                 onClick={() => setSettingsTab('display')}
                 style={{
                   flex: 1,
-                  padding: '16px',
+                  padding: '14px 8px',
+                  whiteSpace: 'nowrap',
                   background: settingsTab === 'display' ? 'white' : 'transparent',
                   border: 'none',
                   borderBottom: settingsTab === 'display' ? '3px solid #667eea' : 'none',
                   fontWeight: settingsTab === 'display' ? 600 : 400,
-                  fontSize: '15px',
+                  fontSize: '14px',
                   cursor: 'pointer',
                   color: settingsTab === 'display' ? '#667eea' : '#666',
                   transition: 'all 0.2s'
@@ -2932,7 +3060,7 @@ export default function Home() {
                     style={{
                       width: '100%',
                       padding: '14px 24px',
-                      background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+                      background: 'var(--accent-color)',
                       color: 'white',
                       border: 'none',
                       borderRadius: '8px',
@@ -2987,6 +3115,274 @@ export default function Home() {
                     <p style={{ marginTop: '12px', fontSize: '13px', color: '#666' }}>
                       예시: AI가 "경제 성장, 투자 증가"를 긍정 키워드로, "위험 증가, 규제 강화"를 부정 키워드로 추출했다면,
                       "경제 성장과 투자 증가"가 포함된 기사는 긍정으로 분류됩니다.
+                    </p>
+                  </div>
+                </div>
+              </div>
+              )}
+
+              {/* 텔레그램 알림 설정 탭 */}
+              {settingsTab === 'telegram' && (
+              <div className={styles.settingSection}>
+                <h3 className={styles.sectionTitle}>기본 설정</h3>
+
+                <div className={styles.settingItem}>
+                  <label className={styles.toggleLabel}>
+                    <input
+                      type="checkbox"
+                      checked={telegramEnabled}
+                      onChange={(e) => setTelegramEnabled(e.target.checked)}
+                      className={styles.toggleCheckbox}
+                    />
+                    <span className={styles.toggleText}>정기 알림 활성화</span>
+                  </label>
+                  <p className={styles.helpText}>
+                    활성화하면 설정한 주기마다 자동으로 뉴스를 분석하여 텔레그램으로 전송합니다
+                  </p>
+                </div>
+
+                <div className={styles.settingItem}>
+                  <label className={styles.settingLabel}>봇 토큰 {telegramHasEnvBotToken ? '' : '*'}</label>
+                  <input
+                    type="text"
+                    value={telegramBotToken}
+                    onChange={(e) => setTelegramBotToken(e.target.value)}
+                    placeholder={telegramHasEnvBotToken ? '비워두면 서버 .env의 TELEGRAM_BOT_TOKEN 사용' : '123456789:AAExxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx'}
+                    className={styles.settingInput}
+                  />
+                  <p className={styles.helpText}>
+                    {telegramHasEnvBotToken
+                      ? '✓ 서버 .env(TELEGRAM_BOT_TOKEN)에 설정됨 — 비워두면 이 값을 사용합니다'
+                      : '@BotFather에서 봇 생성 후 발급받은 토큰을 입력하세요'}
+                  </p>
+                </div>
+
+                <div className={styles.settingItem}>
+                  <label className={styles.settingLabel}>Chat ID {telegramHasEnvChatId ? '' : '*'}</label>
+                  <input
+                    type="text"
+                    value={telegramChatId}
+                    onChange={(e) => setTelegramChatId(e.target.value)}
+                    placeholder={telegramHasEnvChatId ? '비워두면 서버 .env의 TELEGRAM_CHAT_ID 사용' : '예: 123456789, -1001234567890, @mychannel'}
+                    className={styles.settingInput}
+                  />
+                  <p className={styles.helpText}>
+                    {telegramHasEnvChatId
+                      ? '✓ 서버 .env(TELEGRAM_CHAT_ID)에 설정됨 — 비워두면 이 값을 사용합니다'
+                      : '메시지를 받을 대상의 Chat ID입니다 (개인/그룹 숫자 ID 또는 @채널이름)'}
+                  </p>
+                </div>
+
+                <div className={styles.settingItem}>
+                  <label className={styles.settingLabel}>검색어 *</label>
+                  <input
+                    type="text"
+                    value={telegramQuery}
+                    onChange={(e) => setTelegramQuery(e.target.value)}
+                    placeholder="예: AI 뉴스, 경제 동향, 기술 트렌드"
+                    className={styles.settingInput}
+                  />
+                  <p className={styles.helpText}>
+                    이 검색어로 뉴스를 수집하고 분석합니다
+                  </p>
+                </div>
+
+                <h3 className={styles.sectionTitle} style={{ marginTop: '32px' }}>알림 주기</h3>
+
+                <div className={styles.settingItem}>
+                  <label className={styles.settingLabel}>알림 주기</label>
+                  <input
+                    type="text"
+                    value={telegramScheduleText}
+                    onChange={(e) => setTelegramScheduleText(e.target.value)}
+                    placeholder="예: 매일 오전 9시, 30분마다, 평일 오후 6시"
+                    className={styles.settingInput}
+                  />
+                  <div className={styles.schedulePresets}>
+                    {[
+                      { label: '1분마다', value: '1분마다' },
+                      { label: '매일 오전 9시', value: '매일 오전 9시' },
+                      { label: '평일 오전 9시', value: '평일 오전 9시' },
+                      { label: '6시간마다', value: '6시간마다' },
+                      { label: '매주 월요일 9시', value: '매주 월요일 오전 9시' },
+                    ].map((preset) => (
+                      <button
+                        key={preset.value}
+                        type="button"
+                        className={`${styles.schedulePresetChip} ${telegramScheduleText === preset.value ? styles.schedulePresetActive : ''}`}
+                        onClick={() => setTelegramScheduleText(preset.value)}
+                      >
+                        {preset.label}
+                      </button>
+                    ))}
+                  </div>
+                  {telegramScheduleText && (() => {
+                    const parsed = parseNaturalSchedule(telegramScheduleText);
+                    if (parsed) {
+                      return (
+                        <p className={styles.helpText} style={{ color: 'var(--accent-color)' }}>
+                          {parsed.description} — <code style={{ fontSize: '12px', opacity: 0.7 }}>{parsed.cron}</code>
+                        </p>
+                      );
+                    }
+                    return (
+                      <p className={styles.helpText} style={{ color: '#e74c3c' }}>
+                        인식할 수 없는 형식입니다. 예: 5분마다, 매일 오후 3시, 평일 오전 9시 30분
+                      </p>
+                    );
+                  })()}
+                </div>
+
+                <h3 className={styles.sectionTitle} style={{ marginTop: '32px' }}>감성 필터</h3>
+
+                <div className={styles.settingItem}>
+                  <label className={styles.settingLabel}>알림받을 감성 유형</label>
+                  <div className={styles.checkboxGroup}>
+                    <label className={styles.checkboxLabel}>
+                      <input
+                        type="checkbox"
+                        checked={telegramSentimentTypes.has('negative')}
+                        onChange={(e) => {
+                          const newTypes = new Set(telegramSentimentTypes);
+                          if (e.target.checked) {
+                            newTypes.add('negative');
+                          } else {
+                            newTypes.delete('negative');
+                          }
+                          setTelegramSentimentTypes(newTypes);
+                        }}
+                      />
+                      <span className={styles.sentimentBadge} style={{ backgroundColor: '#ffebee', color: '#f44336', padding: '6px 14px', borderRadius: '16px', fontWeight: 600, fontSize: '14px' }}>
+                        부정 뉴스
+                      </span>
+                    </label>
+                    <label className={styles.checkboxLabel}>
+                      <input
+                        type="checkbox"
+                        checked={telegramSentimentTypes.has('positive')}
+                        onChange={(e) => {
+                          const newTypes = new Set(telegramSentimentTypes);
+                          if (e.target.checked) {
+                            newTypes.add('positive');
+                          } else {
+                            newTypes.delete('positive');
+                          }
+                          setTelegramSentimentTypes(newTypes);
+                        }}
+                      />
+                      <span className={styles.sentimentBadge} style={{ backgroundColor: '#e8f5e9', color: '#4caf50', padding: '6px 14px', borderRadius: '16px', fontWeight: 600, fontSize: '14px' }}>
+                        긍정 뉴스
+                      </span>
+                    </label>
+                    <label className={styles.checkboxLabel}>
+                      <input
+                        type="checkbox"
+                        checked={telegramSentimentTypes.has('neutral')}
+                        onChange={(e) => {
+                          const newTypes = new Set(telegramSentimentTypes);
+                          if (e.target.checked) {
+                            newTypes.add('neutral');
+                          } else {
+                            newTypes.delete('neutral');
+                          }
+                          setTelegramSentimentTypes(newTypes);
+                        }}
+                      />
+                      <span className={styles.sentimentBadge} style={{ backgroundColor: '#fff3e0', color: '#ff9800', padding: '6px 14px', borderRadius: '16px', fontWeight: 600, fontSize: '14px' }}>
+                        중립 뉴스
+                      </span>
+                    </label>
+                  </div>
+                  <p className={styles.helpText}>
+                    선택한 감성의 기사만 텔레그램으로 전송됩니다
+                  </p>
+                </div>
+
+                <div className={styles.settingItem}>
+                  <label className={styles.settingLabel}>최대 기사 수</label>
+                  <select
+                    value={maxArticles}
+                    onChange={(e) => setMaxArticles(Number(e.target.value))}
+                    className={styles.settingInput}
+                  >
+                    <option value={50}>50개 (빠름)</option>
+                    <option value={100}>100개 (보통)</option>
+                    <option value={200}>200개 (권장)</option>
+                    <option value={300}>300개</option>
+                    <option value={500}>500개</option>
+                  </select>
+                  <p className={styles.helpText}>
+                    크롤링할 최대 기사 수입니다. 텔레그램 메시지에는 상위 10개만 전송됩니다
+                  </p>
+                </div>
+
+                <h3 className={styles.sectionTitle} style={{ marginTop: '32px' }}>테스트</h3>
+
+                <div className={styles.settingItem}>
+                  <button
+                    onClick={handleSendTestTelegram}
+                    disabled={telegramTestLoading || !telegramQuery || (!telegramBotToken && !telegramHasEnvBotToken) || (!telegramChatId && !telegramHasEnvChatId)}
+                    className={styles.testButton}
+                    style={{
+                      width: '100%',
+                      padding: '14px 24px',
+                      background: 'var(--accent-color)',
+                      color: 'white',
+                      border: 'none',
+                      borderRadius: '8px',
+                      fontSize: '15px',
+                      fontWeight: 600,
+                      cursor: telegramTestLoading || !telegramQuery || (!telegramBotToken && !telegramHasEnvBotToken) || (!telegramChatId && !telegramHasEnvChatId) ? 'not-allowed' : 'pointer',
+                      opacity: telegramTestLoading || !telegramQuery || (!telegramBotToken && !telegramHasEnvBotToken) || (!telegramChatId && !telegramHasEnvChatId) ? 0.5 : 1
+                    }}
+                  >
+                    {telegramTestLoading ? '전송 중...' : '테스트 전송'}
+                  </button>
+                  <p className={styles.helpText}>
+                    현재 설정으로 텔레그램 메시지를 즉시 전송해봅니다
+                  </p>
+                  {telegramTestMessage && (() => {
+                    // ✅ 성공(초록) / ⚠️ 안내: 결과 없음(호박색) / ❌ 실패(빨강)
+                    const isSuccess = telegramTestMessage.startsWith('✅');
+                    const isWarning = telegramTestMessage.startsWith('⚠️');
+                    const palette = isSuccess
+                      ? { bg: '#e8f5e9', border: '#4caf50', text: '#2e7d32' }
+                      : isWarning
+                        ? { bg: '#fff8e1', border: '#ff9800', text: '#e65100' }
+                        : { bg: '#ffebee', border: '#f44336', text: '#c62828' };
+                    return (
+                      <div style={{
+                        padding: '12px 16px',
+                        background: palette.bg,
+                        border: `2px solid ${palette.border}`,
+                        borderRadius: '8px',
+                        color: palette.text,
+                        fontWeight: 500,
+                        textAlign: 'center',
+                        marginTop: '12px'
+                      }}>
+                        {telegramTestMessage}
+                      </div>
+                    );
+                  })()}
+                </div>
+
+                <div style={{
+                  marginTop: '32px',
+                  padding: '20px',
+                  background: '#f8f9fa',
+                  borderRadius: '12px',
+                  border: '1px solid #e0e0e0'
+                }}>
+                  <h4 style={{ margin: '0 0 12px 0', fontSize: '16px', color: '#333' }}>💡 봇 토큰 · Chat ID 얻는 법</h4>
+                  <div style={{ fontSize: '14px', lineHeight: '1.6', color: '#555' }}>
+                    <ol style={{ margin: '0', paddingLeft: '20px' }}>
+                      <li style={{ marginBottom: '8px' }}><strong>봇 생성:</strong> 텔레그램에서 <strong>@BotFather</strong>에게 <code>/newbot</code>을 보내고 안내에 따라 봇을 만들면 <strong>봇 토큰</strong>이 발급됩니다</li>
+                      <li style={{ marginBottom: '8px' }}><strong>대화 시작:</strong> 방금 만든 봇을 검색해 <strong>대화를 시작</strong>하거나(개인), 그룹/채널에 <strong>봇을 추가</strong>합니다</li>
+                      <li style={{ marginBottom: '8px' }}><strong>Chat ID 확인:</strong> <strong>@userinfobot</strong>에게 말을 걸면 내 숫자 ID를 알려줍니다. 그룹은 보통 <code>-100</code>으로 시작하며, 채널은 <code>@채널이름</code>도 사용할 수 있습니다</li>
+                    </ol>
+                    <p style={{ marginTop: '12px', fontSize: '13px', color: '#c62828' }}>
+                      ⚠️ 봇 토큰은 봇을 완전히 제어할 수 있는 비밀 값입니다. 외부에 노출되지 않도록 주의하세요.
                     </p>
                   </div>
                 </div>

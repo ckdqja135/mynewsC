@@ -11,6 +11,9 @@ import type {
   LarkConfig,
   LarkSendRequest,
   LarkSendResponse,
+  TelegramConfig,
+  TelegramSendRequest,
+  TelegramSendResponse,
   ApiError
 } from '@/types/news';
 
@@ -299,6 +302,102 @@ export class NewsApiService {
       }
 
       throw new Error('Failed to delete Lark schedule');
+    }
+  }
+
+  // Telegram 수동 전송
+  static async sendTelegramManual(params: TelegramSendRequest): Promise<TelegramSendResponse> {
+    try {
+      const response = await apiClient.post<TelegramSendResponse>(
+        '/telegram/send-manual',
+        params,
+        { timeout: 290000 } // 최대 ~5분 (뉴스 크롤링 + LLM 분석 시간 고려, 프록시 타임아웃과 정렬)
+      );
+      return response.data;
+    } catch (error) {
+      if (axios.isAxiosError(error)) {
+        const axiosError = error as AxiosError<ApiError>;
+
+        if (axiosError.response) {
+          const errorData = axiosError.response.data;
+          const errorMessage =
+            errorData?.message ||
+            errorData?.detail ||
+            errorData?.error ||
+            'Failed to send Telegram message';
+
+          throw new Error(errorMessage);
+        } else if (axiosError.request) {
+          throw new Error('No response from server. Please check your connection.');
+        }
+      }
+
+      throw new Error('An unexpected error occurred');
+    }
+  }
+
+  // Telegram 스케줄 저장
+  static async saveTelegramSchedule(config: TelegramConfig): Promise<{ success: boolean; jobId: string }> {
+    try {
+      const response = await apiClient.post<{ success: boolean; jobId: string }>(
+        '/telegram/schedule-config',
+        config
+      );
+      return response.data;
+    } catch (error) {
+      if (axios.isAxiosError(error)) {
+        const axiosError = error as AxiosError<ApiError>;
+
+        if (axiosError.response) {
+          const errorData = axiosError.response.data;
+          const errorMessage =
+            errorData?.message ||
+            errorData?.detail ||
+            errorData?.error ||
+            'Failed to save Telegram schedule';
+
+          throw new Error(errorMessage);
+        }
+      }
+
+      throw new Error('Failed to save Telegram schedule');
+    }
+  }
+
+  // Telegram 스케줄 조회
+  // (enabled=false여도 env 크리덴셜 유무 플래그가 필요하므로 응답을 그대로 반환)
+  static async getTelegramSchedule(): Promise<TelegramConfig | null> {
+    try {
+      const response = await apiClient.get<TelegramConfig>('/telegram/schedule-config');
+      return response.data;
+    } catch (error) {
+      console.error('Failed to get Telegram schedule:', error);
+      return null;
+    }
+  }
+
+  // Telegram 스케줄 삭제
+  static async deleteTelegramSchedule(): Promise<{ success: boolean }> {
+    try {
+      const response = await apiClient.delete<{ success: boolean }>('/telegram/schedule-config');
+      return response.data;
+    } catch (error) {
+      if (axios.isAxiosError(error)) {
+        const axiosError = error as AxiosError<ApiError>;
+
+        if (axiosError.response) {
+          const errorData = axiosError.response.data;
+          const errorMessage =
+            errorData?.message ||
+            errorData?.detail ||
+            errorData?.error ||
+            'Failed to delete Telegram schedule';
+
+          throw new Error(errorMessage);
+        }
+      }
+
+      throw new Error('Failed to delete Telegram schedule');
     }
   }
 }
