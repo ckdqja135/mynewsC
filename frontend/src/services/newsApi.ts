@@ -14,6 +14,9 @@ import type {
   TelegramConfig,
   TelegramSendRequest,
   TelegramSendResponse,
+  TrendingConfig,
+  TrendingSendRequest,
+  TrendingSendResponse,
   ApiError
 } from '@/types/news';
 
@@ -398,6 +401,102 @@ export class NewsApiService {
       }
 
       throw new Error('Failed to delete Telegram schedule');
+    }
+  }
+
+  // 실시간 핫 키워드 수동 전송
+  static async sendTrendingManual(params: TrendingSendRequest): Promise<TrendingSendResponse> {
+    try {
+      const response = await apiClient.post<TrendingSendResponse>(
+        '/telegram/send-trending-manual',
+        params,
+        { timeout: 30000 } // 외부 트렌드 조회 + 전송 (빠름)
+      );
+      return response.data;
+    } catch (error) {
+      if (axios.isAxiosError(error)) {
+        const axiosError = error as AxiosError<ApiError>;
+
+        if (axiosError.response) {
+          const errorData = axiosError.response.data;
+          const errorMessage =
+            errorData?.message ||
+            errorData?.detail ||
+            errorData?.error ||
+            'Failed to send trending keywords';
+
+          throw new Error(errorMessage);
+        } else if (axiosError.request) {
+          throw new Error('No response from server. Please check your connection.');
+        }
+      }
+
+      throw new Error('An unexpected error occurred');
+    }
+  }
+
+  // 실시간 핫 키워드 스케줄 저장
+  static async saveTrendingSchedule(config: TrendingConfig): Promise<{ success: boolean; jobId: string }> {
+    try {
+      const response = await apiClient.post<{ success: boolean; jobId: string }>(
+        '/telegram/trending-schedule-config',
+        config
+      );
+      return response.data;
+    } catch (error) {
+      if (axios.isAxiosError(error)) {
+        const axiosError = error as AxiosError<ApiError>;
+
+        if (axiosError.response) {
+          const errorData = axiosError.response.data;
+          const errorMessage =
+            errorData?.message ||
+            errorData?.detail ||
+            errorData?.error ||
+            'Failed to save trending schedule';
+
+          throw new Error(errorMessage);
+        }
+      }
+
+      throw new Error('Failed to save trending schedule');
+    }
+  }
+
+  // 실시간 핫 키워드 스케줄 조회
+  // (enabled=false여도 env 크리덴셜 유무 플래그가 필요하므로 응답을 그대로 반환)
+  static async getTrendingSchedule(): Promise<TrendingConfig | null> {
+    try {
+      const response = await apiClient.get<TrendingConfig>('/telegram/trending-schedule-config');
+      return response.data;
+    } catch (error) {
+      console.error('Failed to get trending schedule:', error);
+      return null;
+    }
+  }
+
+  // 실시간 핫 키워드 스케줄 삭제
+  static async deleteTrendingSchedule(): Promise<{ success: boolean }> {
+    try {
+      const response = await apiClient.delete<{ success: boolean }>('/telegram/trending-schedule-config');
+      return response.data;
+    } catch (error) {
+      if (axios.isAxiosError(error)) {
+        const axiosError = error as AxiosError<ApiError>;
+
+        if (axiosError.response) {
+          const errorData = axiosError.response.data;
+          const errorMessage =
+            errorData?.message ||
+            errorData?.detail ||
+            errorData?.error ||
+            'Failed to delete trending schedule';
+
+          throw new Error(errorMessage);
+        }
+      }
+
+      throw new Error('Failed to delete trending schedule');
     }
   }
 }

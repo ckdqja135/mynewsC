@@ -79,6 +79,10 @@ const larkBot = new LarkBotService();
 const { TelegramBotService } = require('./services/telegramBot');
 const telegramBot = new TelegramBotService();
 
+// Trending Keywords Service (외부 실시간 핫 키워드)
+const { TrendingKeywordsService } = require('./services/trendingKeywords');
+const trendingService = new TrendingKeywordsService();
+
 // Scheduler Service
 const { SchedulerService } = require('./services/schedulerService');
 const scheduler = new SchedulerService();
@@ -138,6 +142,36 @@ function loadTelegramConfigFromFile() {
     }
   } catch (err) {
     console.warn('[Telegram] Failed to load config from file:', err.message);
+  }
+  return null;
+}
+
+// Telegram 트렌드(핫 키워드) 알림 설정 영구 저장 경로
+// 뉴스 다이제스트 스케줄(telegram_config.json)과 독립적으로 운영한다.
+const TRENDING_CONFIG_FILE = require('path').join(__dirname, '..', 'data', 'trending_config.json');
+
+function saveTrendingConfigToFile(config) {
+  try {
+    const dir = require('path').dirname(TRENDING_CONFIG_FILE);
+    if (!fs.existsSync(dir)) {
+      fs.mkdirSync(dir, { recursive: true });
+    }
+    fs.writeFileSync(TRENDING_CONFIG_FILE, JSON.stringify(config, null, 2), 'utf-8');
+    console.log('[Trending] Config saved to file');
+  } catch (err) {
+    console.error('[Trending] Failed to save config to file:', err.message);
+  }
+}
+
+function loadTrendingConfigFromFile() {
+  try {
+    if (fs.existsSync(TRENDING_CONFIG_FILE)) {
+      const data = JSON.parse(fs.readFileSync(TRENDING_CONFIG_FILE, 'utf-8'));
+      console.log('[Trending] Config loaded from file');
+      return data;
+    }
+  } catch (err) {
+    console.warn('[Trending] Failed to load config from file:', err.message);
   }
   return null;
 }
@@ -1733,6 +1767,195 @@ app.delete('/api/telegram/schedule-config', (req, res) => {
       }
     } catch (err) {
       console.warn('[Telegram] Failed to restore scheduled job:', err.message);
+    }
+  }
+})();
+
+// ==================== Trending Keywords (핫 키워드) Endpoints ====================
+//
+// 외부 실시간 트렌드(급상승 검색어)를 조회/전송한다. 뉴스 다이제스트 스케줄과
+// 독립된 별도 스케줄(jobId: 'telegram-trending-notification')로 운영한다.
+
+// 0. 현재 실시간 핫 키워드 조회 (프론트 미리보기 / 디버깅용, 텔레그램 전송 없음)
+app.get('/api/trending', async (req, res) => {
+  try {
+    const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 10, 1), 20);
+    const source = ['auto', 'signal', 'google'].includes(req.query.source) ? req.query.source : 'auto';
+    const trending = await trendingService.getTrending({ limit, source });
+    res.json(trending);
+  } catch (error) {
+    console.error('[Trending] Fetch error:', error.message);
+    // 외부 소스 실패는 게이트웨이 오류(502)로 구분
+    res.status(502).json({ detail: `트렌드 소스를 불러오지 못했습니다: ${error.message}` });
+  }
+});
+
+// 1. 수동 전송: 지금 실시간 핫 키워드를 텔레그램으로 즉시 전송
+app.post('/api/telegram/send-trending-manual', async (req, res) => {
+  // 봇 토큰 / chat_id: 요청값이 비어 있으면 backend/.env 값으로 폴백
+  const { botToken, chatId } = resolveTelegramCreds(req.body.botToken, req.body.chatId);
+
+  if (!telegramBot.validateBotToken(botToken)) {
+    return res.status(400).json({ detail: 'Invalid Telegram bot token (요청 또는 backend/.env의 TELEGRAM_BOT_TOKEN 확인)' });
+  }
+  if (!telegramBot.validateChatId(chatId)) {
+    return res.status(400).json({ detail: 'Invalid Telegram chat_id (요청 또는 backend/.env의 TELEGRAM_CHAT_ID 확인)' });
+  }
+
+  try {
+    const limit = Math.min(Math.max(parseInt(req.body.limit, 10) || 10, 1), 20);
+    const source = ['auto', 'signal', 'google'].includes(req.body.source) ? req.body.source : 'auto';
+
+    console.log(`[Trending] Manual send requested (source: ${source}, limit: ${limit})`);
+    const trending = await trendingService.getTrending({ limit, source });
+
+    await telegramBot.sendTrendingKeywords(botToken, chatId, trending);
+    console.log(`[Trending] Sent ${trending.items.length} keywords (source: ${trending.source})`);
+
+    res.json({
+      success: true,
+      message: 'Trending keywords sent successfully',
+      source: trending.source,
+      count: trending.items.length,
+      timestamp: new Date().toISOString()
+    });
+  } catch (error) {
+    console.error('[Trending] Send manual error:', error.message);
+    res.status(500).json({ detail: error.message });
+  }
+});
+
+// 트렌드 스케줄 작업 함수 (설정 저장 + 서버 시작 시 복원에서 공유)
+function createTrendingTaskFunction() {
+  return async (config) => {
+    console.log('[Trending Schedule] Running scheduled trending push');
+
+    try {
+      const trending = await trendingService.getTrending({
+        limit: config.limit || 10,
+        source: config.source || 'auto'
+      });
+
+      // 토큰/chat_id는 실행 시점에 env 폴백 해석
+      const { botToken, chatId } = resolveTelegramCreds(config.botToken, config.chatId);
+      await telegramBot.sendTrendingKeywords(botToken, chatId, trending);
+
+      console.log(`[Trending Schedule] Message sent successfully: ${trending.items.length} keywords (source: ${trending.source})`);
+    } catch (error) {
+      console.error('[Trending Schedule] Job failed:', error.message);
+    }
+  };
+}
+
+// 2. 트렌드 스케줄 설정 저장
+app.post('/api/telegram/trending-schedule-config', async (req, res) => {
+  const { enabled, schedule } = req.body;
+
+  // 항상 파일에 저장 (enabled 여부 상관없이 설정값 보존)
+  saveTrendingConfigToFile(req.body);
+
+  try {
+    if (enabled) {
+      // 활성화 시에만 검증 (요청값이 비면 backend/.env 값으로 폴백)
+      const { botToken, chatId } = resolveTelegramCreds(req.body.botToken, req.body.chatId);
+      if (!scheduler.validateCronExpression(schedule)) {
+        return res.status(400).json({ detail: 'Invalid cron expression' });
+      }
+      if (!telegramBot.validateBotToken(botToken)) {
+        return res.status(400).json({ detail: 'Invalid Telegram bot token (요청 또는 backend/.env의 TELEGRAM_BOT_TOKEN 확인)' });
+      }
+      if (!telegramBot.validateChatId(chatId)) {
+        return res.status(400).json({ detail: 'Invalid Telegram chat_id (요청 또는 backend/.env의 TELEGRAM_CHAT_ID 확인)' });
+      }
+      const jobId = 'telegram-trending-notification';
+
+      const result = scheduler.addJob(jobId, schedule, req.body, createTrendingTaskFunction());
+
+      res.json({
+        success: true,
+        jobId: result.jobId,
+        nextRun: result.nextRun,
+        message: 'Trending notifications enabled'
+      });
+    } else {
+      scheduler.removeJob('telegram-trending-notification');
+      res.json({
+        success: true,
+        message: 'Trending notifications disabled'
+      });
+    }
+  } catch (error) {
+    console.error('[Trending] Schedule config error:', error.message);
+    res.status(500).json({ detail: error.message });
+  }
+});
+
+// 3. 트렌드 스케줄 설정 조회
+app.get('/api/telegram/trending-schedule-config', (req, res) => {
+  try {
+    const hasEnvBotToken = !!(process.env.TELEGRAM_BOT_TOKEN || '').trim();
+    const hasEnvChatId = !!(process.env.TELEGRAM_CHAT_ID || '').trim();
+
+    const jobs = scheduler.listJobs();
+    const trendingJob = jobs.find(j => j.jobId === 'telegram-trending-notification');
+
+    if (trendingJob && trendingJob.active) {
+      res.json({
+        enabled: true,
+        ...trendingJob.config,
+        hasEnvBotToken,
+        hasEnvChatId,
+        lastRun: trendingJob.lastRun,
+        nextRun: trendingJob.nextRun
+      });
+    } else {
+      const savedConfig = loadTrendingConfigFromFile();
+      if (savedConfig) {
+        res.json({ ...savedConfig, hasEnvBotToken, hasEnvChatId });
+      } else {
+        res.json({ enabled: false, hasEnvBotToken, hasEnvChatId });
+      }
+    }
+  } catch (error) {
+    console.error('[Trending] Get schedule config error:', error.message);
+    res.status(500).json({ detail: error.message });
+  }
+});
+
+// 4. 트렌드 스케줄 설정 삭제
+app.delete('/api/telegram/trending-schedule-config', (req, res) => {
+  try {
+    const removed = scheduler.removeJob('telegram-trending-notification');
+
+    try {
+      if (fs.existsSync(TRENDING_CONFIG_FILE)) {
+        fs.unlinkSync(TRENDING_CONFIG_FILE);
+      }
+    } catch (e) { /* ignore */ }
+
+    res.json({
+      success: true,
+      message: removed ? 'Trending notifications disabled' : 'No trending notifications to remove'
+    });
+  } catch (error) {
+    console.error('[Trending] Delete schedule config error:', error.message);
+    res.status(500).json({ detail: error.message });
+  }
+});
+
+// ==================== Restore Trending Schedule on Startup ====================
+
+(() => {
+  const savedConfig = loadTrendingConfigFromFile();
+  if (savedConfig && savedConfig.enabled && savedConfig.schedule) {
+    try {
+      const { botToken, chatId } = resolveTelegramCreds(savedConfig.botToken, savedConfig.chatId);
+      if (botToken && chatId && scheduler.validateCronExpression(savedConfig.schedule)) {
+        scheduler.addJob('telegram-trending-notification', savedConfig.schedule, savedConfig, createTrendingTaskFunction());
+        console.log(`[Trending] Restored scheduled job from saved config (schedule: "${savedConfig.schedule}")`);
+      }
+    } catch (err) {
+      console.warn('[Trending] Failed to restore scheduled job:', err.message);
     }
   }
 })();

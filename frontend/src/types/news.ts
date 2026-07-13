@@ -174,3 +174,36 @@ export interface TelegramSendResponse {
   totalArticles: number;
   timestamp: string;
 }
+
+// 실시간 핫 키워드 알림 소스
+export type TrendingSource = 'auto' | 'signal' | 'google';
+
+// 실시간 핫 키워드 알림 설정 (뉴스 다이제스트와 독립된 별도 스케줄)
+export interface TrendingConfig {
+  enabled: boolean;
+  schedule: string; // cron expression
+  source: TrendingSource;
+  limit: number; // 전송할 키워드 개수 (1~20)
+  botToken: string;
+  chatId: string;
+  // backend/.env에 크리덴셜이 있는지 여부 (실제 값은 전달되지 않음)
+  hasEnvBotToken?: boolean;
+  hasEnvChatId?: boolean;
+}
+
+// 실시간 핫 키워드 수동 전송 요청
+export interface TrendingSendRequest {
+  botToken: string;
+  chatId: string;
+  source?: TrendingSource;
+  limit?: number;
+}
+
+// 실시간 핫 키워드 수동 전송 응답
+export interface TrendingSendResponse {
+  success: boolean;
+  message: string;
+  source: string;
+  count: number;
+  timestamp: string;
+}

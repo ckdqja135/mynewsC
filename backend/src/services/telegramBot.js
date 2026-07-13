@@ -289,6 +289,87 @@ class TelegramBotService {
   }
 
   /**
+   * 실시간 핫 키워드(트렌드) 텔레그램 HTML 메시지 포맷팅
+   * @param {Object} trending - trendingKeywords 서비스의 getTrending() 반환값
+   *   { source, fetchedAt, items:[{ rank, keyword, stateEmoji, stateLabel, traffic }] }
+   * @returns {string} 텔레그램 HTML 메시지 텍스트
+   */
+  formatTrendingMessage(trending) {
+    const now = new Date().toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' });
+    const items = trending && Array.isArray(trending.items) ? trending.items : [];
+    const source = trending && trending.source ? trending.source : 'Unknown';
+
+    const lines = [];
+
+    // 1. 헤더
+    lines.push('🔥 <b>실시간 핫 키워드</b>');
+    lines.push('');
+    lines.push(`📅 <b>기준 시각:</b> ${this.escapeHtml(now)}`);
+    lines.push(`🌐 <b>출처:</b> ${this.escapeHtml(source)}`);
+    lines.push('');
+
+    // 2. 키워드 목록
+    if (items.length === 0) {
+      lines.push('<i>표시할 트렌드 키워드가 없습니다.</i>');
+    } else {
+      items.forEach((it, idx) => {
+        const rank = it.rank != null ? it.rank : idx + 1;
+        const keyword = it.keyword || '';
+        // 키워드를 구글 검색 링크로 만들어 바로 확인 가능하게 함.
+        // encodeURIComponent 결과에는 HTML 특수문자가 남지 않으므로 href에 안전하게 삽입된다.
+        const searchUrl = `https://www.google.com/search?q=${encodeURIComponent(keyword)}`;
+        const badge = it.stateEmoji ? `${it.stateEmoji} ` : '';
+        const traffic = it.traffic ? ` — ${this.escapeHtml(it.traffic)}` : '';
+        const state = it.stateLabel ? ` <i>(${this.escapeHtml(it.stateLabel)})</i>` : '';
+        lines.push(
+          `${badge}<b>${rank}.</b> <a href="${searchUrl}">${this.escapeHtml(keyword)}</a>${traffic}${state}`
+        );
+      });
+    }
+
+    // 텔레그램 4096자 제한 처리 (formatAnalysisMessage와 동일한 줄 단위 정책)
+    const text = lines.join('\n');
+    if (text.length <= this.MAX_MESSAGE_LENGTH) {
+      return text;
+    }
+
+    const suffix = '\n\n<i>...(메시지가 길어 일부 생략되었습니다)</i>';
+    const budget = this.MAX_MESSAGE_LENGTH - suffix.length;
+    const kept = [];
+    let length = 0;
+    let truncated = false;
+    for (const line of lines) {
+      const addition = (kept.length > 0 ? 1 : 0) + line.length;
+      if (length + addition > budget) {
+        truncated = true;
+        break;
+      }
+      kept.push(line);
+      length += addition;
+    }
+    return kept.join('\n') + (truncated ? suffix : '');
+  }
+
+  /**
+   * 실시간 핫 키워드를 텔레그램으로 전송
+   * @param {string} botToken - 봇 토큰
+   * @param {string|number} chatId - chat_id
+   * @param {Object} trending - getTrending() 반환값
+   * @returns {Promise<Object>} 전송 결과
+   */
+  async sendTrendingKeywords(botToken, chatId, trending) {
+    if (!this.validateBotToken(botToken)) {
+      throw new Error('Invalid Telegram bot token format');
+    }
+    if (!this.validateChatId(chatId)) {
+      throw new Error('Invalid Telegram chat_id');
+    }
+
+    const text = this.formatTrendingMessage(trending);
+    return await this.sendMessage(botToken, chatId, text);
+  }
+
+  /**
    * 간단한 텍스트 메시지 전송
    * @param {string} botToken - 봇 토큰
    * @param {string|number} chatId - chat_id

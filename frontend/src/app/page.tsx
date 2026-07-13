@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useMemo, useRef } from 'react';
 import { NewsApiService } from '@/services/newsApi';
-import type { NewsArticle, NewsArticleWithScore, SearchMode, NewsAnalysisResponse, SentimentType, LarkConfig, TelegramConfig, AnalysisSource } from '@/types/news';
+import type { NewsArticle, NewsArticleWithScore, SearchMode, NewsAnalysisResponse, SentimentType, LarkConfig, TelegramConfig, TrendingConfig, TrendingSource, AnalysisSource } from '@/types/news';
 import styles from './page.module.css';
 import DatePicker from 'react-datepicker';
 import { ko } from 'date-fns/locale';
@@ -417,6 +417,14 @@ export default function Home() {
   const [telegramHasEnvBotToken, setTelegramHasEnvBotToken] = useState(false);
   const [telegramHasEnvChatId, setTelegramHasEnvChatId] = useState(false);
 
+  // 실시간 핫 키워드 알림 설정 상태 (봇 토큰/Chat ID는 위 Telegram 설정과 공유)
+  const [trendingEnabled, setTrendingEnabled] = useState(false);
+  const [trendingScheduleText, setTrendingScheduleText] = useState('매일 오전 9시');
+  const [trendingSource, setTrendingSource] = useState<TrendingSource>('auto');
+  const [trendingLimit, setTrendingLimit] = useState(10);
+  const [trendingTestLoading, setTrendingTestLoading] = useState(false);
+  const [trendingTestMessage, setTrendingTestMessage] = useState('');
+
   // 감성 키워드 설정 상태
   const [customPositiveKeywords, setCustomPositiveKeywords] = useState<string[]>([]);
   const [customNegativeKeywords, setCustomNegativeKeywords] = useState<string[]>([]);
@@ -599,6 +607,29 @@ export default function Home() {
     };
 
     loadTelegramConfig();
+
+    // 실시간 핫 키워드 알림 설정 로드
+    const loadTrendingConfig = async () => {
+      try {
+        const config = await NewsApiService.getTrendingSchedule();
+        if (config) {
+          // env 크리덴셜 유무는 Telegram 설정과 공유되므로 여기서도 반영
+          if (config.hasEnvBotToken) setTelegramHasEnvBotToken(true);
+          if (config.hasEnvChatId) setTelegramHasEnvChatId(true);
+
+          if (config.enabled) {
+            setTrendingEnabled(true);
+            setTrendingScheduleText(cronToNatural(config.schedule));
+            if (config.source) setTrendingSource(config.source);
+            if (config.limit) setTrendingLimit(config.limit);
+          }
+        }
+      } catch (error) {
+        console.error('Failed to load trending config:', error);
+      }
+    };
+
+    loadTrendingConfig();
 
     // 감성 키워드 로드
     const loadKeywords = async () => {
@@ -973,6 +1004,53 @@ export default function Home() {
     }
   };
 
+  // 실시간 핫 키워드 테스트 전송
+  const handleSendTestTrending = async () => {
+    setTrendingTestLoading(true);
+    setTrendingTestMessage('');
+
+    try {
+      const result = await NewsApiService.sendTrendingManual({
+        botToken: telegramBotToken,
+        chatId: telegramChatId,
+        source: trendingSource,
+        limit: trendingLimit
+      });
+
+      setTrendingTestMessage(`✅ 전송 성공! ${result.count}개 키워드 (출처: ${result.source})`);
+      setTimeout(() => setTrendingTestMessage(''), 5000);
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : '알 수 없는 오류';
+      // 외부 트렌드 소스 일시 오류는 안내로 표시
+      if (msg.includes('불러오지 못') || msg.includes('sources failed')) {
+        setTrendingTestMessage(`⚠️ ${msg}`);
+      } else {
+        setTrendingTestMessage(`❌ 전송 실패: ${msg}`);
+      }
+    } finally {
+      setTrendingTestLoading(false);
+    }
+  };
+
+  // 실시간 핫 키워드 설정 저장
+  const saveTrendingConfig = async () => {
+    try {
+      const config: TrendingConfig = {
+        enabled: trendingEnabled,
+        schedule: parseNaturalSchedule(trendingScheduleText)?.cron || '0 9 * * *',
+        source: trendingSource,
+        limit: trendingLimit,
+        botToken: telegramBotToken,
+        chatId: telegramChatId
+      };
+
+      await NewsApiService.saveTrendingSchedule(config);
+    } catch (error) {
+      console.error('Failed to save trending config:', error);
+      throw error;
+    }
+  };
+
   const saveAutoSearchSettings = async () => {
     const settings = {
       enabled: autoSearchEnabled,
@@ -999,10 +1077,11 @@ export default function Home() {
       }
     }
 
-    // Telegram 설정도 함께 저장
+    // Telegram 설정도 함께 저장 (뉴스 다이제스트 + 실시간 핫 키워드)
     if (settingsTab === 'telegram') {
       try {
         await saveTelegramConfig();
+        await saveTrendingConfig();
       } catch (error) {
         alert('Telegram 설정 저장 실패: ' + (error instanceof Error ? error.message : '알 수 없는 오류'));
         return;
@@ -3384,6 +3463,155 @@ export default function Home() {
                     <p style={{ marginTop: '12px', fontSize: '13px', color: '#c62828' }}>
                       ⚠️ 봇 토큰은 봇을 완전히 제어할 수 있는 비밀 값입니다. 외부에 노출되지 않도록 주의하세요.
                     </p>
+                  </div>
+                </div>
+
+                {/* ==================== 실시간 핫 키워드 알림 ==================== */}
+                <div style={{ marginTop: '40px', paddingTop: '32px', borderTop: '2px dashed #e0e0e0' }}>
+                  <h3 className={styles.sectionTitle}>🔥 실시간 핫 키워드 알림</h3>
+                  <p className={styles.helpText} style={{ marginTop: '-8px', marginBottom: '20px' }}>
+                    지금 사람들이 가장 많이 검색하는 <strong>실시간 급상승 키워드</strong>를 위 봇 토큰·Chat ID로 정기 전송합니다.
+                    (뉴스 다이제스트 알림과 별개로 동작합니다)
+                  </p>
+
+                  <div className={styles.settingItem}>
+                    <label className={styles.toggleLabel}>
+                      <input
+                        type="checkbox"
+                        checked={trendingEnabled}
+                        onChange={(e) => setTrendingEnabled(e.target.checked)}
+                        className={styles.toggleCheckbox}
+                      />
+                      <span className={styles.toggleText}>핫 키워드 정기 알림 활성화</span>
+                    </label>
+                    <p className={styles.helpText}>
+                      활성화하면 설정한 주기마다 실시간 핫 키워드 순위를 텔레그램으로 전송합니다
+                    </p>
+                  </div>
+
+                  <div className={styles.settingItem}>
+                    <label className={styles.settingLabel}>키워드 출처</label>
+                    <select
+                      value={trendingSource}
+                      onChange={(e) => setTrendingSource(e.target.value as TrendingSource)}
+                      className={styles.settingInput}
+                    >
+                      <option value="auto">자동 (실시간 검색어 우선, 실패 시 구글 트렌드)</option>
+                      <option value="signal">실시간 검색어 (signal.bz)</option>
+                      <option value="google">구글 트렌드 (Google Trends)</option>
+                    </select>
+                    <p className={styles.helpText}>
+                      실시간 검색어는 순위 변동(🆕/🔺/🔻)까지, 구글 트렌드는 대략적인 검색량을 함께 보여줍니다
+                    </p>
+                  </div>
+
+                  <div className={styles.settingItem}>
+                    <label className={styles.settingLabel}>키워드 개수</label>
+                    <select
+                      value={trendingLimit}
+                      onChange={(e) => setTrendingLimit(Number(e.target.value))}
+                      className={styles.settingInput}
+                    >
+                      <option value={5}>5개</option>
+                      <option value={10}>10개 (권장)</option>
+                      <option value={15}>15개</option>
+                      <option value={20}>20개</option>
+                    </select>
+                    <p className={styles.helpText}>
+                      한 번에 전송할 상위 키워드 수입니다 (실시간 검색어는 최대 10개까지 제공)
+                    </p>
+                  </div>
+
+                  <div className={styles.settingItem}>
+                    <label className={styles.settingLabel}>알림 주기</label>
+                    <input
+                      type="text"
+                      value={trendingScheduleText}
+                      onChange={(e) => setTrendingScheduleText(e.target.value)}
+                      placeholder="예: 매일 오전 9시, 30분마다, 평일 오후 6시"
+                      className={styles.settingInput}
+                    />
+                    <div className={styles.schedulePresets}>
+                      {[
+                        { label: '1시간마다', value: '1시간마다' },
+                        { label: '매일 오전 9시', value: '매일 오전 9시' },
+                        { label: '평일 오전 9시', value: '평일 오전 9시' },
+                        { label: '3시간마다', value: '3시간마다' },
+                        { label: '매일 오후 6시', value: '매일 오후 6시' },
+                      ].map((preset) => (
+                        <button
+                          key={preset.value}
+                          type="button"
+                          className={`${styles.schedulePresetChip} ${trendingScheduleText === preset.value ? styles.schedulePresetActive : ''}`}
+                          onClick={() => setTrendingScheduleText(preset.value)}
+                        >
+                          {preset.label}
+                        </button>
+                      ))}
+                    </div>
+                    {trendingScheduleText && (() => {
+                      const parsed = parseNaturalSchedule(trendingScheduleText);
+                      if (parsed) {
+                        return (
+                          <p className={styles.helpText} style={{ color: 'var(--accent-color)' }}>
+                            {parsed.description} — <code style={{ fontSize: '12px', opacity: 0.7 }}>{parsed.cron}</code>
+                          </p>
+                        );
+                      }
+                      return (
+                        <p className={styles.helpText} style={{ color: '#e74c3c' }}>
+                          인식할 수 없는 형식입니다. 예: 5분마다, 매일 오후 3시, 평일 오전 9시 30분
+                        </p>
+                      );
+                    })()}
+                  </div>
+
+                  <div className={styles.settingItem}>
+                    <button
+                      onClick={handleSendTestTrending}
+                      disabled={trendingTestLoading}
+                      className={styles.testButton}
+                      style={{
+                        width: '100%',
+                        padding: '14px 24px',
+                        background: 'var(--accent-color)',
+                        color: 'white',
+                        border: 'none',
+                        borderRadius: '8px',
+                        fontSize: '15px',
+                        fontWeight: 600,
+                        cursor: trendingTestLoading ? 'not-allowed' : 'pointer',
+                        opacity: trendingTestLoading ? 0.5 : 1
+                      }}
+                    >
+                      {trendingTestLoading ? '전송 중...' : '🔥 핫 키워드 테스트 전송'}
+                    </button>
+                    <p className={styles.helpText}>
+                      지금 실시간 핫 키워드를 텔레그램으로 즉시 전송해봅니다
+                    </p>
+                    {trendingTestMessage && (() => {
+                      const isSuccess = trendingTestMessage.startsWith('✅');
+                      const isWarning = trendingTestMessage.startsWith('⚠️');
+                      const palette = isSuccess
+                        ? { bg: '#e8f5e9', border: '#4caf50', text: '#2e7d32' }
+                        : isWarning
+                          ? { bg: '#fff8e1', border: '#ff9800', text: '#e65100' }
+                          : { bg: '#ffebee', border: '#f44336', text: '#c62828' };
+                      return (
+                        <div style={{
+                          padding: '12px 16px',
+                          background: palette.bg,
+                          border: `2px solid ${palette.border}`,
+                          borderRadius: '8px',
+                          color: palette.text,
+                          fontWeight: 500,
+                          textAlign: 'center',
+                          marginTop: '12px'
+                        }}>
+                          {trendingTestMessage}
+                        </div>
+                      );
+                    })()}
                   </div>
                 </div>
               </div>
