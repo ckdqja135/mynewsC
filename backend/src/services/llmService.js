@@ -632,6 +632,150 @@ ${articlesText}
     console.log(`[LLM] Sentiment analysis completed`);
     return [...classifiedResults, ...neutralResults];
   }
+
+  /**
+   * 특정 분야(카테고리) 뉴스 헤드라인에서 '그 분야 인기 검색 키워드'를 인기순으로 추출.
+   * 카테고리별 실시간 검색어 소스가 없어, 네이버 섹션 뉴스로 대체 생성하는 용도.
+   * @param {string[]} headlines - 해당 섹션 최신 헤드라인 목록
+   * @param {string} category - 분야명 (정치/경제/사회/생활/세계/IT)
+   * @param {number} limit - 뽑을 키워드 수
+   * @returns {Promise<string[]>} 인기순 키워드 배열 (최대 limit개)
+   */
+  async extractTrendingKeywords(headlines, category, limit = 10) {
+    if (!Array.isArray(headlines) || headlines.length === 0) return [];
+
+    const list = headlines.slice(0, 24).map((h, i) => `${i + 1}. ${h}`).join('\n');
+    const prompt = `다음은 '${category}' 분야 최신 뉴스 헤드라인입니다.
+이 분야에서 지금 가장 화제인 핵심 검색 키워드 ${limit}개를 인기(화제성) 순으로 뽑아주세요.
+
+규칙:
+- 같은 이슈를 다룬 헤드라인은 하나로 합치세요.
+- 사람들이 실제로 검색할 만한 짧은 키워드 형태로 만드세요 (대략 3~15자: 인물명/사건명/제품명/핵심 이슈).
+- 헤드라인 문장을 그대로 쓰지 말고 핵심만 압축하세요.
+- '${category}' 분야와 무관하면 제외하세요.
+
+헤드라인:
+${list}
+
+각 줄에 "번호. 키워드" 형식으로 정확히 ${limit}개만 출력:`;
+
+    const MAX_RETRIES = 3;
+    for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
+      try {
+        const response = await this.client.chat.completions.create({
+          model: this.model,
+          messages: [
+            { role: 'system', content: 'You extract concise Korean trending search keywords for a given news category from headlines. Merge duplicate issues, output short searchable keywords, one "number. keyword" per line.' },
+            { role: 'user', content: prompt },
+          ],
+          temperature: 0.2,
+          max_tokens: limit * 24 + 60,
+          ...this._reasoningParam(),
+        });
+
+        const text = this._extractContent(response, 'extractKeywords').trim();
+        const seen = new Set();
+        const keywords = [];
+        for (const line of text.split('\n')) {
+          // "1. 키워드" / "1) 키워드" / "- 키워드" 형태에서 키워드만 추출
+          const m = line.match(/^\s*(?:\d+[.)]|[-•])?\s*(.+?)\s*$/);
+          if (!m) continue;
+          let kw = m[1].trim().replace(/^["'#]+|["']+$/g, '').trim();
+          if (!kw || kw.length < 2 || kw.length > 40) continue;
+          if (seen.has(kw)) continue;
+          seen.add(kw);
+          keywords.push(kw);
+          if (keywords.length >= limit) break;
+        }
+        return keywords;
+      } catch (error) {
+        const isRetryable = attempt < MAX_RETRIES - 1 && (
+          error.status === 429 || (error.message && error.message.includes('429')) ||
+          (error.status >= 500 && error.status < 600)
+        );
+        if (isRetryable) {
+          const delay = 1000 * (attempt + 1);
+          console.warn(`[LLM] extractKeywords error [${error.status || '?'}], retrying in ${delay}ms`);
+          await new Promise(r => setTimeout(r, delay));
+          continue;
+        }
+        console.error(`[LLM] extractTrendingKeywords failed [${error.status || '?'}]: ${error.message}`);
+        return [];
+      }
+    }
+    return [];
+  }
+
+  /**
+   * 실시간 급상승 검색어를 카테고리로 분류.
+   * 프론트 "실시간 인기 키워드 상세" 화면의 카테고리 필터용.
+   * (signal.bz 등 트렌드 소스가 카테고리를 제공하지 않아 LLM으로 추정)
+   * @param {string[]} keywords - 분류할 검색어 목록
+   * @returns {Promise<string[]>} keywords와 같은 순서의 카테고리 배열
+   *   (정치/경제/사회/연예/스포츠/IT/생활/문화 중 하나, 실패 시 '기타')
+   */
+  async categorizeKeywords(keywords) {
+    const CATS = ['정치', '경제', '사회', '연예', '스포츠', 'IT', '생활', '문화'];
+    if (!Array.isArray(keywords) || keywords.length === 0) return [];
+
+    const list = keywords.map((k, i) => `${i + 1}. ${k}`).join('\n');
+    const prompt = `다음은 한국 실시간 급상승 검색어 목록입니다. 각 검색어를 아래 카테고리 중 하나로 분류하세요.
+카테고리: ${CATS.join(', ')}
+
+규칙:
+- 반드시 위 카테고리 중 하나만 사용하세요.
+- 인물/사건은 맥락으로 추정하세요 (정치인→정치, 운동선수/구단→스포츠, 배우/가수/방송→연예, 기업/제품/기술→IT 또는 경제).
+- 판단이 애매하면 가장 가까운 카테고리를 고르세요.
+
+검색어 목록:
+${list}
+
+각 줄에 "번호. 카테고리" 형식으로만 출력하세요:`;
+
+    const MAX_RETRIES = 3;
+    for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
+      try {
+        const response = await this.client.chat.completions.create({
+          model: this.model,
+          messages: [
+            { role: 'system', content: 'You are a Korean news keyword categorizer. Assign each trending search keyword to exactly one of the given categories. Output "number. category" per line, nothing else.' },
+            { role: 'user', content: prompt },
+          ],
+          temperature: 0.1,
+          max_tokens: keywords.length * 12 + 40,
+          ...this._reasoningParam(),
+        });
+
+        const text = this._extractContent(response, 'categorize').trim();
+        const results = keywords.map(() => '기타');
+
+        for (const line of text.split('\n')) {
+          const numMatch = line.match(/(\d+)/);
+          if (!numMatch) continue;
+          const idx = parseInt(numMatch[1], 10) - 1;
+          if (idx < 0 || idx >= keywords.length) continue;
+          const found = CATS.find(c => line.includes(c));
+          if (found) results[idx] = found;
+        }
+
+        return results;
+      } catch (error) {
+        const isRetryable = attempt < MAX_RETRIES - 1 && (
+          error.status === 429 || (error.message && error.message.includes('429')) ||
+          (error.status >= 500 && error.status < 600)
+        );
+        if (isRetryable) {
+          const delay = 1000 * (attempt + 1);
+          console.warn(`[LLM] Categorize error [${error.status || '?'}], retrying in ${delay}ms (attempt ${attempt + 1}/${MAX_RETRIES})`);
+          await new Promise(r => setTimeout(r, delay));
+          continue;
+        }
+        console.error(`[LLM] Keyword categorize failed [${error.status || '?'}]: ${error.message}`);
+        return keywords.map(() => '기타');
+      }
+    }
+    return keywords.map(() => '기타');
+  }
 }
 
 function getLlmService() {

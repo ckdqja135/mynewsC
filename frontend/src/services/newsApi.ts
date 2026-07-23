@@ -17,6 +17,8 @@ import type {
   TrendingConfig,
   TrendingSendRequest,
   TrendingSendResponse,
+  TrendingSource,
+  TrendingResponse,
   ApiError
 } from '@/types/news';
 
@@ -401,6 +403,68 @@ export class NewsApiService {
       }
 
       throw new Error('Failed to delete Telegram schedule');
+    }
+  }
+
+  // 실시간 인기 키워드 조회 (사이드바 위젯용)
+  // 텔레그램 알림과 동일한 소스/형식(백엔드 trendingService: signal.bz → Google Trends 폴백)을 사용한다.
+  static async getTrending(params?: { limit?: number; source?: TrendingSource; categorize?: boolean }): Promise<TrendingResponse> {
+    try {
+      const search = new URLSearchParams();
+      if (params?.limit) search.set('limit', String(params.limit));
+      if (params?.source) search.set('source', params.source);
+      if (params?.categorize) search.set('categorize', '1');
+      const qs = search.toString();
+
+      const response = await apiClient.get<TrendingResponse>(
+        `/trending${qs ? `?${qs}` : ''}`,
+        { timeout: 15000 } // 외부 트렌드 소스 조회 (빠름)
+      );
+      return response.data;
+    } catch (error) {
+      if (axios.isAxiosError(error)) {
+        const axiosError = error as AxiosError<ApiError>;
+        if (axiosError.response) {
+          const errorData = axiosError.response.data;
+          throw new Error(
+            errorData?.message ||
+            errorData?.detail ||
+            errorData?.error ||
+            'Failed to fetch trending keywords'
+          );
+        } else if (axiosError.request) {
+          throw new Error('No response from server. Please check your connection.');
+        }
+      }
+      throw new Error('An unexpected error occurred');
+    }
+  }
+
+  // 카테고리별 인기 검색 키워드 조회 (네이버 섹션 기반, 카테고리마다 독립 조회)
+  static async getCategoryTrending(cat: string, limit = 10): Promise<TrendingResponse> {
+    try {
+      const search = new URLSearchParams({ cat, limit: String(limit) });
+      const response = await apiClient.get<TrendingResponse>(
+        `/trending/category?${search.toString()}`,
+        { timeout: 50000 } // 콜드 조회는 네이버 섹션 파싱 + LLM 키워드 추출로 다소 걸림
+      );
+      return response.data;
+    } catch (error) {
+      if (axios.isAxiosError(error)) {
+        const axiosError = error as AxiosError<ApiError>;
+        if (axiosError.response) {
+          const errorData = axiosError.response.data;
+          throw new Error(
+            errorData?.message ||
+            errorData?.detail ||
+            errorData?.error ||
+            'Failed to fetch category trends'
+          );
+        } else if (axiosError.request) {
+          throw new Error('No response from server. Please check your connection.');
+        }
+      }
+      throw new Error('An unexpected error occurred');
     }
   }
 

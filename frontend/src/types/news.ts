@@ -178,6 +178,26 @@ export interface TelegramSendResponse {
 // 실시간 핫 키워드 알림 소스
 export type TrendingSource = 'auto' | 'signal' | 'google';
 
+// 실시간 인기 키워드 아이템 (백엔드 trendingService 정규화 형식 — 텔레그램 알림과 동일)
+export interface TrendingKeywordItem {
+  rank: number;
+  keyword: string;
+  state: string | null;
+  stateEmoji: string;
+  stateLabel: string;
+  traffic: string | null;
+  // categorize=1로 요청 시 백엔드가 LLM으로 부여하는 카테고리 (정치/경제/사회/...)
+  category?: string | null;
+}
+
+// 실시간 인기 키워드 조회 응답 (GET /api/trending)
+export interface TrendingResponse {
+  source: string;
+  fetchedAt: string;
+  count: number;
+  items: TrendingKeywordItem[];
+}
+
 // 실시간 핫 키워드 알림 설정 (뉴스 다이제스트와 독립된 별도 스케줄)
 export interface TrendingConfig {
   enabled: boolean;

@@ -1470,6 +1470,42 @@ export default function Home() {
     await performSearch(query, searchMode);
   };
 
+  // ── 사이드바 실시간 인기 키워드 클릭 → 키워드 검색 ──
+  // performSearch는 매 렌더 새로 생성되므로 ref로 최신 참조를 유지한다
+  // (아래 리스너 useEffect는 빈 deps라 stale closure를 피하기 위함).
+  const performSearchRef = useRef(performSearch);
+  useEffect(() => {
+    performSearchRef.current = performSearch;
+  });
+
+  useEffect(() => {
+    const runTrendingSearch = (raw: string) => {
+      const kw = (raw || '').trim();
+      if (!kw) return;
+      setSearchMode('keyword');
+      setQuery(kw);
+      performSearchRef.current(kw, 'keyword');
+    };
+
+    // 홈 페이지에서 클릭한 경우: 커스텀 이벤트로 즉시 검색
+    const handler = (e: Event) => runTrendingSearch((e as CustomEvent<string>).detail);
+    window.addEventListener('trending-search', handler);
+
+    // 다른 페이지에서 클릭 후 홈으로 이동한 경우: 대기 중인 키워드 처리
+    try {
+      const pending = sessionStorage.getItem('pendingTrendingSearch');
+      if (pending) {
+        sessionStorage.removeItem('pendingTrendingSearch');
+        setTimeout(() => runTrendingSearch(pending), 150);
+      }
+    } catch {
+      /* sessionStorage 접근 불가 시 무시 */
+    }
+
+    return () => window.removeEventListener('trending-search', handler);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const sources = useMemo(() => {
     const sourceMap = new Map<string, number>();
     articles.forEach(article => {

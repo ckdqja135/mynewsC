@@ -71,8 +71,10 @@
 }
 
 /* Navigation */
+/* flex:0 — 콘텐츠 높이만 차지. 남는 세로 공간은 아래 TrendingKeywords 위젯이 채운다.
+   (모바일 media query에서는 flex:1로 재정의되어 하단 탭바로 동작) */
 .navSection {
-  flex: 1;
+  flex: 0 0 auto;
   display: flex;
   flex-direction: column;
   gap: 2px;

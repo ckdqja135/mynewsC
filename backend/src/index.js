@@ -83,6 +83,14 @@ const telegramBot = new TelegramBotService();
 const { TrendingKeywordsService } = require('./services/trendingKeywords');
 const trendingService = new TrendingKeywordsService();
 
+// Trending Categorizer (LLM으로 키워드 카테고리 분류 + 캐시). LLM 없으면 비활성.
+const { TrendingCategorizer } = require('./services/trendingCategorizer');
+const trendingCategorizer = llmService ? new TrendingCategorizer(llmService) : null;
+
+// Naver Section Trends (카테고리별 인기 키워드: 네이버 섹션 뉴스 → LLM 키워드 추출)
+const { NaverSectionTrends } = require('./services/naverSectionTrends');
+const naverSectionTrends = new NaverSectionTrends(llmService);
+
 // Scheduler Service
 const { SchedulerService } = require('./services/schedulerService');
 const scheduler = new SchedulerService();
@@ -1782,11 +1790,55 @@ app.get('/api/trending', async (req, res) => {
     const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 10, 1), 20);
     const source = ['auto', 'signal', 'google'].includes(req.query.source) ? req.query.source : 'auto';
     const trending = await trendingService.getTrending({ limit, source });
+
+    // categorize=1 이고 LLM이 가능하면 각 키워드에 카테고리를 부여 (상세 화면 필터용).
+    // 새 키워드만 LLM 분류하고 캐시하므로 반복 호출 비용은 낮다.
+    const wantCategory = req.query.categorize === '1' || req.query.categorize === 'true';
+    if (wantCategory && trendingCategorizer) {
+      try {
+        const cats = await trendingCategorizer.categorize(trending.items.map(i => i.keyword));
+        trending.items = trending.items.map((it, i) => ({ ...it, category: cats[i] || '기타' }));
+      } catch (err) {
+        console.error('[Trending] Categorize error:', err.message);
+      }
+    }
+
     res.json(trending);
   } catch (error) {
     console.error('[Trending] Fetch error:', error.message);
     // 외부 소스 실패는 게이트웨이 오류(502)로 구분
     res.status(502).json({ detail: `트렌드 소스를 불러오지 못했습니다: ${error.message}` });
+  }
+});
+
+// 0-1. 카테고리별 인기 검색 키워드 조회 (전체는 /api/trending, 카테고리는 네이버 섹션 기반)
+app.get('/api/trending/categories', (req, res) => {
+  res.json({ categories: naverSectionTrends.categories });
+});
+
+app.get('/api/trending/category', async (req, res) => {
+  const cat = (req.query.cat || '').trim();
+  const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 10, 1), 20);
+
+  if (!naverSectionTrends.isSupported(cat)) {
+    return res.status(400).json({
+      detail: `지원하지 않는 카테고리입니다: ${cat}`,
+      supported: naverSectionTrends.categories,
+    });
+  }
+
+  try {
+    const items = await naverSectionTrends.getCategoryTrends(cat, limit);
+    res.json({
+      source: `Naver ${cat}`,
+      category: cat,
+      fetchedAt: new Date().toISOString(),
+      count: items.length,
+      items,
+    });
+  } catch (error) {
+    console.error(`[Trending] Category fetch error (${cat}):`, error.message);
+    res.status(502).json({ detail: `카테고리 트렌드를 불러오지 못했습니다: ${error.message}` });
   }
 });
 

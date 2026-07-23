@@ -1,9 +1,10 @@
 'use client';
 
-import { usePathname } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useState, useEffect } from 'react';
 import styles from './AppShell.module.css';
+import TrendingKeywords from './TrendingKeywords';
 
 const navItems = [
   { href: '/', icon: 'search', label: '검색' },
@@ -12,6 +13,7 @@ const navItems = [
 
 export default function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
+  const router = useRouter();
   const [theme, setTheme] = useState<'light' | 'dark'>('light');
 
   useEffect(() => {
@@ -30,6 +32,21 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
 
   const handleSettingsClick = () => {
     window.dispatchEvent(new CustomEvent('open-settings'));
+  };
+
+  // 실시간 인기 키워드 클릭 → 홈(검색 페이지)에서 해당 키워드로 검색.
+  // 홈에 있으면 커스텀 이벤트로 즉시 검색, 다른 페이지면 대기 키워드를 저장 후 홈으로 이동.
+  const handleKeywordClick = (keyword: string) => {
+    if (pathname === '/') {
+      window.dispatchEvent(new CustomEvent<string>('trending-search', { detail: keyword }));
+    } else {
+      try {
+        sessionStorage.setItem('pendingTrendingSearch', keyword);
+      } catch {
+        /* sessionStorage 접근 불가 시 무시 */
+      }
+      router.push('/');
+    }
   };
 
   return (
@@ -60,6 +77,9 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
             </Link>
           ))}
         </nav>
+
+        {/* 실시간 인기 키워드 위젯 */}
+        <TrendingKeywords onKeywordClick={handleKeywordClick} />
 
         {/* Bottom buttons */}
         <div className={styles.sidebarBottom}>
