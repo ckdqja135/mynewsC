@@ -699,8 +699,14 @@ app.post('/api/news/analyze', async (req, res) => {
 
     let contextChunks = null;
     if (allChunks.length > 0 && embeddingService) {
-      contextChunks = await embeddingService.rankChunksBySimilarity(q, allChunks, 10, feedbackService);
-      console.log(`[RAG] Top chunks selected: ${contextChunks.length}`);
+      // 후보를 넉넉히 뽑은 뒤, 최소 유사도 미만(관련성 낮은 근거)은 제외한다.
+      // (예: '삼성전자' 분석에 유사도 0.29짜리 무관 기사가 근거로 섞이는 것 방지)
+      const ranked = await embeddingService.rankChunksBySimilarity(q, allChunks, 20, feedbackService);
+      const MIN_SCORE = 0.30;
+      const strong = ranked.filter(c => (c.score || 0) >= MIN_SCORE);
+      // 너무 적으면(3개 미만) 상위 3개는 유지해 근거가 0이 되지 않게 함. 상한 10.
+      contextChunks = (strong.length >= 3 ? strong : ranked.slice(0, 3)).slice(0, 10);
+      console.log(`[RAG] ranked ${ranked.length} → after min-score(${MIN_SCORE}) cut: ${contextChunks.length}`);
     }
 
     // Perform analysis

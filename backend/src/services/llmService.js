@@ -654,8 +654,10 @@ ${articlesText}
    * @returns {Promise<Array>} 감성이 태그된 기사 배열
    */
   async analyzeSentimentBatch(articles, query) {
-    const LLM_CLASSIFY_LIMIT = 200;
-    const BATCH_SIZE = 10;
+    // Cerebras 무료 티어는 '분당 요청 5개' 제한이 병목(토큰은 넉넉).
+    // 상위 기사만 큰 배치로 분류해 요청 수를 5/분 이내로 유지한다. (60/20 = 3 요청)
+    const LLM_CLASSIFY_LIMIT = 60;
+    const BATCH_SIZE = 20;
 
     const toClassify = articles.slice(0, LLM_CLASSIFY_LIMIT);
     const rest = articles.slice(LLM_CLASSIFY_LIMIT);
