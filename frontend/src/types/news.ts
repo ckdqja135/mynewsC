@@ -76,6 +76,20 @@ export interface AnalysisSource {
   title: string;
   url: string;
   score: number;
+  press?: string | null;       // 언론사 (P2)
+  publishedAt?: string | null; // 발행 시각 (P2)
+  usedChunks?: number;         // 이 기사에서 근거로 쓰인 청크 수 (P2)
+}
+
+// 분석 대상/제외 카운트 (P2)
+export interface AnalysisStats {
+  collected: number;       // 수집한 기사 수
+  afterDedup: number;      // 중복 제거 후
+  afterDateFilter: number; // 기간 필터 후
+  candidates: number;      // 분석 후보(num 제한)
+  bodyFetched: number;     // 본문 확보
+  bodyFailed: number;      // 본문 실패
+  contextArticles: number; // 실제 근거로 반영된 기사 수
 }
 
 export interface NewsAnalysisResponse {
@@ -89,6 +103,8 @@ export interface NewsAnalysisResponse {
   sentiment: SentimentAnalysis | null;
   trends: TrendAnalysis | null;
   generated_at: string;
+  stats?: AnalysisStats;       // P2
+  limitations?: string[];      // P2
 }
 
 export interface FeedbackRequest {

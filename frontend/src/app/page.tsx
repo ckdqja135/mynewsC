@@ -380,6 +380,8 @@ export default function Home() {
   const [analysisStep, setAnalysisStep] = useState<string>('');
   const [progressPercent, setProgressPercent] = useState<number>(0);
   const analysisInProgress = useRef(false);
+  // AI 검색 결과의 감성(긍/부/중립) 자동 태깅 로딩 상태 (배지/필터용)
+  const [sentimentLoading, setSentimentLoading] = useState<boolean>(false);
   // 분류 완료된 전체 기사 (감성 필터 변경 시 재분류 없이 재분석용)
   const classifiedArticlesRef = useRef<any[]>([]);
 
@@ -1207,28 +1209,39 @@ export default function Home() {
       let filteredArticlesForAnalysis = targetArticles;
 
       if (targetArticles.length > 0) {
-        try {
-          setProgressPercent(10);
-          setAnalysisStep(`감성 분류 중... (${targetArticles.length}개 기사)`);
-
-          const classificationResult = await NewsApiService.classifySentiment(
-            targetArticles,
-            searchQuery,
-            ['positive', 'negative', 'neutral']
-          );
-
-          classifiedArticles = classificationResult.articles;
+        // AI 검색 단계에서 이미 감성 태깅됐으면 재분류를 생략(중복 LLM 호출 방지)
+        const alreadyClassified = targetArticles.every((a: any) => a && a.sentiment);
+        if (alreadyClassified) {
+          classifiedArticles = targetArticles;
           classifiedArticlesRef.current = classifiedArticles;
-          setProgressPercent(60);
-
           filteredArticlesForAnalysis = classifiedArticles.filter((article: any) =>
             sentimentFilter.has(article.sentiment)
           );
-
-        } catch (classifyError) {
-          console.error('[AI] LLM sentiment classification failed:', classifyError);
-          filteredArticlesForAnalysis = targetArticles;
           setProgressPercent(60);
+        } else {
+          try {
+            setProgressPercent(10);
+            setAnalysisStep(`감성 분류 중... (${targetArticles.length}개 기사)`);
+
+            const classificationResult = await NewsApiService.classifySentiment(
+              targetArticles,
+              searchQuery,
+              ['positive', 'negative', 'neutral']
+            );
+
+            classifiedArticles = classificationResult.articles;
+            classifiedArticlesRef.current = classifiedArticles;
+            setProgressPercent(60);
+
+            filteredArticlesForAnalysis = classifiedArticles.filter((article: any) =>
+              sentimentFilter.has(article.sentiment)
+            );
+
+          } catch (classifyError) {
+            console.error('[AI] LLM sentiment classification failed:', classifyError);
+            filteredArticlesForAnalysis = targetArticles;
+            setProgressPercent(60);
+          }
         }
       }
 
@@ -1397,6 +1410,28 @@ export default function Home() {
         setArticles(response.articles);
         setTotal(response.total);
         setTotalCollected((response as any).total_collected || 0);
+
+        // AI 검색의 핵심: 결과 기사에 감성(긍/부/중립)을 자동 태깅한다.
+        // 분류된 배열을 그대로 결과로 설정하므로 배지가 확실히 반영된다(실패 시 원본 유지).
+        if (response.articles.length > 0) {
+          try {
+            setSentimentLoading(true);
+            const cls = await NewsApiService.classifySentiment(
+              response.articles,
+              searchQuery,
+              ['positive', 'negative', 'neutral']
+            );
+            if (cls && Array.isArray(cls.articles) && cls.articles.length > 0) {
+              responseArticles = cls.articles;
+              setArticles(cls.articles);
+              classifiedArticlesRef.current = cls.articles;
+            }
+          } catch (e) {
+            console.error('[감성 분류] 실패(무시):', e);
+          } finally {
+            setSentimentLoading(false);
+          }
+        }
       } else {
         // 키워드 검색
         const response = await NewsApiService.searchNews({
@@ -1449,9 +1484,8 @@ export default function Home() {
         );
       }
 
-      // AI 분석은 자동 실행하지 않는다. 사용자가 결과 패널의 'AI 분석 시작' 버튼으로 직접 실행한다.
-      // (시맨틱 검색의 자동 분석은 /analyze 페이지와 기능이 중복되고, 매 검색마다 불필요한
-      //  LLM 호출/비용을 유발하므로 명시적 트리거로 변경)
+      // AI 분석(요약/트렌드/근거)은 자동 실행하지 않는다 — 결과 패널의 'AI 분석 시작' 버튼으로.
+      // (감성 태깅은 위 시맨틱 검색 처리에서 이미 완료됨)
     } catch (err) {
       setError(err instanceof Error ? err.message : '뉴스를 불러오는데 실패했습니다');
       setArticles([]);
@@ -1911,23 +1945,16 @@ export default function Home() {
           </div>
         )}
 
-        {/* 검색/분석 중 로딩 표시 */}
-        {(loading || analysisLoading) && (
+        {/* 검색 중에만 전체 화면 로딩 표시. AI 분석은 오른쪽 패널 안에서만 로딩한다. */}
+        {loading && (
           <div className={styles.loadingOverlay}>
             <div className={styles.loadingSpinner}>
               <div className={styles.spinner}></div>
               <p className={styles.loadingText}>
-                {loading ? '검색 중입니다...' : analysisStep || 'AI 분석 중...'}
+                {sentimentLoading ? '기사 감성을 분석하고 있어요...' : '검색 중입니다...'}
               </p>
               <div className={styles.progressBar}>
-                {analysisLoading && progressPercent > 0 ? (
-                  <div
-                    className={styles.progressFillReal}
-                    style={{ width: `${progressPercent}%` }}
-                  ></div>
-                ) : (
-                  <div className={styles.progressFill}></div>
-                )}
+                <div className={styles.progressFill}></div>
               </div>
             </div>
           </div>
@@ -2167,9 +2194,9 @@ export default function Home() {
                 )}
                 <div className={styles.content}>
                   {/* 배지 행: 감성 + 유사도 + 키워드 */}
-                  {(searchMode === 'semantic' && analysisData && (article as any).sentiment) || hasSimilarityScore || (article.matchedKeyword && lastSearchQuery.includes(',')) ? (
+                  {(searchMode === 'semantic' && (article as any).sentiment) || hasSimilarityScore || (article.matchedKeyword && lastSearchQuery.includes(',')) ? (
                     <div className={styles.badgeRow}>
-                      {searchMode === 'semantic' && analysisData && (article as any).sentiment && (
+                      {searchMode === 'semantic' && (article as any).sentiment && (
                         <span style={{
                           display: 'inline-block',
                           padding: '4px 12px',
@@ -2185,7 +2212,7 @@ export default function Home() {
                            (article as any).sentiment === 'negative' ? '🔴 부정' : '🟡 중립'}
                         </span>
                       )}
-                      {searchMode === 'semantic' && analysisData && (article as any).sentiment && (
+                      {searchMode === 'semantic' && (article as any).sentiment && (
                         <div className={styles.sentimentCorrection}>
                           {sentimentLabelMap[article.id] ? (
                             <span className={styles.sentimentCorrectionDone}>
@@ -2375,7 +2402,15 @@ export default function Home() {
                     {analysisLoading && (
                       <div className={styles.analysisLoading}>
                         <div className={styles.spinner}></div>
-                        <p>AI가 뉴스를 분석하고 있습니다...</p>
+                        <p>{analysisStep || 'AI가 뉴스를 분석하고 있습니다...'}</p>
+                        {progressPercent > 0 && (
+                          <div className={styles.analysisProgressBar}>
+                            <div
+                              className={styles.analysisProgressFill}
+                              style={{ width: `${progressPercent}%` }}
+                            />
+                          </div>
+                        )}
                       </div>
                     )}
 
@@ -2567,6 +2602,9 @@ export default function Home() {
 
                     {!analysisData && !analysisLoading && !analysisError && lastSearchQuery && articles.length > 0 && (
                       <div className={styles.analysisPlaceholder}>
+                        {sentimentLoading && (
+                          <p className={styles.sentimentClassifying}>🔄 기사 감성을 분류하고 있어요…</p>
+                        )}
                         <p className={styles.analysisPlaceholderTitle}>이 검색 결과를 AI로 분석해 보세요</p>
                         <p className={styles.analysisPlaceholderDesc}>
                           핵심 요약 · 주요 포인트 · 감성(긍정/부정) · 트렌드를 정리하고 근거 기사를 함께 보여줍니다.

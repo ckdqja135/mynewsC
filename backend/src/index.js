@@ -626,11 +626,14 @@ app.post('/api/news/analyze', async (req, res) => {
 
   try {
     let articlesToAnalyze;
+    // 근거/카운트 메타(P2)용: 수집 → 중복제거 → 날짜필터 단계 카운트
+    let collected = 0, afterDedup = 0, afterDateFilter = 0;
 
     // 프론트엔드에서 필터링된 기사가 제공된 경우 사용
     if (providedArticles && Array.isArray(providedArticles) && providedArticles.length > 0) {
       console.log(`[DEBUG] Analysis - Using ${providedArticles.length} provided articles (pre-filtered)`);
       articlesToAnalyze = providedArticles.slice(0, num);
+      collected = afterDedup = afterDateFilter = providedArticles.length;
     } else {
       // 기존 방식: 크롤링 후 필터링
       const allArticles = await fetchFromAllSources(q, hl, gl, num, excluded_sources, 100);
@@ -660,6 +663,9 @@ app.post('/api/news/analyze', async (req, res) => {
 
       // Sort by date and limit
       sortByDate(filteredArticles);
+      collected = allArticles.length;
+      afterDedup = uniqueArticles.length;
+      afterDateFilter = filteredArticles.length;
       articlesToAnalyze = filteredArticles.slice(0, num);
     }
 
@@ -715,6 +721,33 @@ app.post('/api/news/analyze', async (req, res) => {
     }
 
     console.log(`[DEBUG] Analysis completed: ${analysisType}`);
+
+    // P2: 근거·카운트·한계 메타 부착
+    const contextArticles = Array.isArray(analysisResult.sources) ? analysisResult.sources.length : 0;
+    const bodyFailed = articlesForFetch.length - fetchedCount;
+    analysisResult.stats = {
+      collected,
+      afterDedup,
+      afterDateFilter,
+      candidates: articlesToAnalyze.length,
+      bodyFetched: fetchedCount,
+      bodyFailed,
+      contextArticles,
+    };
+    const limitations = [];
+    if (contextArticles === 0) {
+      limitations.push('기사 본문 근거(RAG)를 확보하지 못해 제목·요약만으로 분석했습니다. 출처 정확도가 낮을 수 있습니다.');
+    } else if (contextArticles < 3) {
+      limitations.push(`근거로 삼은 기사가 ${contextArticles}건으로 적어, 결과가 편향될 수 있습니다.`);
+    }
+    if (bodyFailed > 0) {
+      limitations.push(`본문 수집 대상 ${articlesForFetch.length}건 중 ${bodyFailed}건은 본문을 읽지 못했습니다.`);
+    }
+    const presses = new Set((analysisResult.sources || []).map(s => s.press).filter(Boolean));
+    if (contextArticles > 1 && presses.size === 1) {
+      limitations.push('근거 기사가 단일 언론사에 집중되어 있습니다.');
+    }
+    analysisResult.limitations = limitations;
 
     analysisCache.set(analysisResult, cacheParams);
     res.json(analysisResult);

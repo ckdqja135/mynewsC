@@ -52,24 +52,81 @@ Content: ${snippet}`;
   }
 
   /**
-   * RAG 청크 기반 컨텍스트 생성 (URL 포함, 인용 강제)
+   * 청크를 기사 단위로 묶는다. contextChunks는 유사도 내림차순이므로,
+   * 기사 최초 등장 순서(=최고 점수 순)를 보존해 [참고 N]과 sources[N-1] 순서를 일치시킨다.
    * @param {Array} chunks - rankChunksBySimilarity 결과 [{text, article, score, ...}]
+   * @returns {Array<{article, chunks, score}>}
+   */
+  _groupChunksByArticle(chunks) {
+    const map = new Map();
+    const order = [];
+    for (const c of (chunks || [])) {
+      const a = c.article || {};
+      const key = a.url || a.id || a.title || `#${order.length}`;
+      if (!map.has(key)) {
+        map.set(key, { article: a, chunks: [c], score: c.score || 0 });
+        order.push(key);
+      } else {
+        const g = map.get(key);
+        g.chunks.push(c);
+        g.score = Math.max(g.score, c.score || 0);
+      }
+    }
+    return order.map(k => map.get(k));
+  }
+
+  /**
+   * RAG 청크 기반 컨텍스트 생성 (URL 포함, 인용 강제).
+   * [참고 N] = 기사 N (기사 단위로 묶어 번호를 부여 → 인용을 실제 기사와 매핑 가능).
+   * @param {Array} chunks
    * @returns {string}
    */
   _prepareChunksContext(chunks) {
-    return chunks.map((chunk, idx) => {
-      const article = chunk.article;
-      const dateStr = article.publishedAt
-        ? new Date(article.publishedAt).toISOString().split('T')[0]
+    const groups = this._groupChunksByArticle(chunks);
+    return groups.map((g, idx) => {
+      const a = g.article;
+      const dateStr = a.publishedAt
+        ? new Date(a.publishedAt).toISOString().split('T')[0]
         : '날짜 미상';
-      const urlPart = article.url ? ` | URL: ${article.url}` : '';
-
-      const text = chunk.text.length > 300 ? chunk.text.slice(0, 300) + '...' : chunk.text;
+      const urlPart = a.url ? ` | URL: ${a.url}` : '';
+      let text = g.chunks.map(c => c.text).join(' … ');
+      if (text.length > 500) text = text.slice(0, 500) + '...';
       return `[참고 ${idx + 1}]
-제목: ${article.title}
-출처: ${article.source} | 날짜: ${dateStr}${urlPart}
+제목: ${a.title}
+출처: ${a.source || '출처 미상'} | 날짜: ${dateStr}${urlPart}
 내용: ${text}`;
     }).join('\n\n---\n\n');
+  }
+
+  /**
+   * 분석 결과의 근거 기사 목록을 기사 단위로 구성 (중복 제거, 언론사·발행시각 포함).
+   * _prepareChunksContext와 동일한 순서라 [참고 N] ↔ sources[N-1]로 매핑된다.
+   * @param {Array} chunks
+   * @returns {Array|null}
+   */
+  // 스크래핑으로 붙는 '새 창 열림' 등 잔여 텍스트 제거
+  _cleanText(t) {
+    return String(t || '').replace(/\s*새\s*창\s*열림\s*$/g, '').trim();
+  }
+
+  // 언론사명이 오염(예: '새 창 열림')됐거나 이상하면 null로 (프론트에서 도메인으로 폴백)
+  _cleanPress(s) {
+    const p = this._cleanText(s);
+    if (!p || /새\s*창\s*열림|^https?:/i.test(p) || p.length > 20) return null;
+    return p;
+  }
+
+  _buildSources(chunks) {
+    if (!chunks || chunks.length === 0) return null;
+    const groups = this._groupChunksByArticle(chunks);
+    return groups.map(g => ({
+      title: this._cleanText(g.article.title),
+      url: g.article.url,
+      press: this._cleanPress(g.article.source),
+      publishedAt: g.article.publishedAt || null,
+      score: g.score,
+      usedChunks: g.chunks.length,
+    }));
   }
 
   /**
@@ -155,9 +212,7 @@ Respond ONLY with valid JSON. No additional text.`;
     const resultText = this._extractContent(response, 'analyze').trim();
 
     const confidence_score = this._calcConfidence(chunks);
-    const sources = chunks
-      ? chunks.map(c => ({ title: c.article.title, url: c.article.url, score: c.score }))
-      : null;
+    const sources = this._buildSources(chunks);
 
     try {
       const result = this._parseJsonResponse(resultText);
@@ -233,9 +288,7 @@ Respond ONLY with valid JSON.`;
     const resultText = this._extractContent(response, 'analyze').trim();
 
     const confidence_score = this._calcConfidence(chunks);
-    const sources = chunks
-      ? chunks.map(c => ({ title: c.article.title, url: c.article.url, score: c.score }))
-      : null;
+    const sources = this._buildSources(chunks);
 
     try {
       const result = this._parseJsonResponse(resultText);
@@ -305,9 +358,7 @@ Respond ONLY with valid JSON.`;
     const resultText = this._extractContent(response, 'analyze').trim();
 
     const confidence_score = this._calcConfidence(chunks);
-    const sources = chunks
-      ? chunks.map(c => ({ title: c.article.title, url: c.article.url, score: c.score }))
-      : null;
+    const sources = this._buildSources(chunks);
 
     try {
       const result = this._parseJsonResponse(resultText);
@@ -372,9 +423,7 @@ Focus on factual, actionable information. Respond ONLY with valid JSON.`;
     const resultText = this._extractContent(response, 'analyze').trim();
 
     const confidence_score = this._calcConfidence(chunks);
-    const sources = chunks
-      ? chunks.map(c => ({ title: c.article.title, url: c.article.url, score: c.score }))
-      : null;
+    const sources = this._buildSources(chunks);
 
     try {
       const result = this._parseJsonResponse(resultText);

@@ -3118,6 +3118,31 @@
   margin: 0;
 }
 
+.sentimentClassifying {
+  margin: 0 0 4px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--accent-color);
+}
+
+/* AI 분석 로딩: 패널 안 진행 바 */
+.analysisProgressBar {
+  width: 100%;
+  max-width: 260px;
+  height: 6px;
+  margin-top: 12px;
+  border-radius: 6px;
+  background: var(--bg-secondary);
+  overflow: hidden;
+}
+
+.analysisProgressFill {
+  height: 100%;
+  border-radius: 6px;
+  background: var(--accent-color);
+  transition: width 0.3s ease;
+}
+
 /* 태블릿 반응형 */
 @media (max-width: 1200px) {
   .analysisColumn {

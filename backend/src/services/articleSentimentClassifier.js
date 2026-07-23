@@ -14,12 +14,19 @@ const ONNX_MODEL_ID = 'sentiment/onnx';
 const ONNX_MODEL_FILE = path.join(ONNX_MODELS_ROOT, 'sentiment', 'onnx', 'onnx', 'model.onnx');
 
 const DEFAULT_NEGATIVE_KEYWORDS = [
+  // 사건·사고·안전
   '이물질 검출', '리콜', '회수 조치', '사망자', '사망 사고', '폭발 사고', '화재 발생',
-  '중상자', '사상자 발생', '오염 물질', '유해 물질', '독성 물질',
-  '발암 물질', '위반 적발', '구속', '체포', '불법 행위',
-  '횡령', '배임', '결함 발견', '불량품', '제품 하자',
-  '오작동 사고', '붕괴 사고', '침수 피해', '침몰 사고', '추락 사고',
-  '누출 사고', '유출 사고', '집단 감염', '확진자 급증'
+  '중상자', '사상자 발생', '오염 물질', '유해 물질', '독성 물질', '발암 물질',
+  '오작동 사고', '붕괴 사고', '침수 피해', '침몰 사고', '추락 사고', '누출 사고',
+  '유출 사고', '집단 감염', '확진자 급증', '참사', '피해 확산',
+  // 법·수사·비위
+  '위반 적발', '구속', '체포', '불법 행위', '횡령', '배임', '압수수색', '구속영장',
+  '기소', '피소', '소송', '고발', '벌금', '과징금', '제재', '담합', '갑질',
+  '성추행', '성폭행', '마약', '음주운전', '학교폭력',
+  // 품질·논란
+  '결함 발견', '불량품', '제품 하자', '논란', '의혹', '파문', '비판', '해킹', '유출',
+  // 경제·실적 악화
+  '급락', '폭락', '적자', '어닝쇼크', '실적 부진', '상장폐지', '부도', '파산', '파업'
 ];
 
 const DEFAULT_POSITIVE_KEYWORDS = [
@@ -397,25 +404,70 @@ class ArticleSentimentClassifier {
 
     const LOCAL_MODEL_MIN_ACCURACY = 0.80;
 
+    let result = null;
+
     if (!forceLLM && this._isOnnxAvailable()) {
       try {
-        return await this._classifyWithOnnxModel(articles);
+        result = await this._classifyWithOnnxModel(articles);
       } catch (err) {
         console.warn(`[ArticleSentimentClassifier] ONNX model failed, falling back: ${err.message}`);
       }
     }
 
-    const canUseLocal = !forceLLM
-      && sentimentTrainer
-      && sentimentTrainer.classifier
-      && sentimentTrainer.modelMetadata
-      && sentimentTrainer.modelMetadata.accuracy >= LOCAL_MODEL_MIN_ACCURACY;
+    if (!result) {
+      const canUseLocal = !forceLLM
+        && sentimentTrainer
+        && sentimentTrainer.classifier
+        && sentimentTrainer.modelMetadata
+        && sentimentTrainer.modelMetadata.accuracy >= LOCAL_MODEL_MIN_ACCURACY;
 
-    if (canUseLocal) {
-      return this._classifyWithLocalModel(articles, query, sentimentTrainer);
+      result = canUseLocal
+        ? await this._classifyWithLocalModel(articles, query, sentimentTrainer)
+        : await this._classifyWithLLM(articles, llmService, query, sentimentTrainer);
     }
 
-    return this._classifyWithLLM(articles, llmService, query, sentimentTrainer);
+    // 부정 우선 키워드 안전망: 어떤 방식(ONNX/로컬/LLM/폴백)이든, 제목에 명백한
+    // 부정 키워드가 있으면 '부정'으로 보정한다. (LLM 한도로 전부 '중립'이 돼도 부정은 잡힘)
+    return this._applyKeywordOverride(result);
+  }
+
+  /**
+   * 분류 결과 위에 키워드 안전망을 적용한다.
+   * - 부정 키워드가 있으면 무조건 negative (부정 정확도 우선)
+   * - 긍정 키워드가 있고 현재 neutral이면 positive로 상향
+   * @param {Array} articles - 이미 sentiment가 붙은 기사 배열
+   * @returns {Array}
+   */
+  _applyKeywordOverride(articles) {
+    if (!Array.isArray(articles)) return articles;
+    let neg = 0;
+    let pos = 0;
+    const out = articles.map(a => {
+      const forced = this.checkForceKeywords(a); // 부정 우선으로 검사
+      if (forced === 'negative' && a.sentiment !== 'negative') {
+        neg++;
+        return {
+          ...a,
+          sentiment: 'negative',
+          sentimentScore: Math.max(a.sentimentScore || 0, 90),
+          classificationMethod: `${a.classificationMethod || 'llm'}+kw`,
+        };
+      }
+      if (forced === 'positive' && a.sentiment === 'neutral') {
+        pos++;
+        return {
+          ...a,
+          sentiment: 'positive',
+          sentimentScore: Math.max(a.sentimentScore || 0, 90),
+          classificationMethod: `${a.classificationMethod || 'llm'}+kw`,
+        };
+      }
+      return a;
+    });
+    if (neg || pos) {
+      console.log(`[Sentiment] Keyword safety-net override: +${neg} negative, +${pos} positive`);
+    }
+    return out;
   }
 
   async _classifyWithOnnxModel(articles) {
@@ -543,14 +595,19 @@ class ArticleSentimentClassifier {
         classificationMethod: 'llm'
       }));
 
-      // LLM 분류 결과를 학습 데이터로 자동 수집
-      if (sentimentTrainer) {
+      // LLM이 실제로 분류했을 때만 학습 라벨을 수집한다.
+      // 결과가 전부 'neutral'이면 한도/오류로 인한 폴백일 가능성이 높아, 그대로 수집하면
+      // 학습 데이터가 중립으로 오염되고 재학습 시 모델이 퇴화한다 → 이 경우 수집을 건너뛴다.
+      const allNeutral = result.length > 0 && result.every(a => a.sentiment === 'neutral');
+      if (sentimentTrainer && !allNeutral) {
         try {
           const labelResult = sentimentTrainer.addLlmLabels(result, query);
           console.log(`[ArticleSentimentClassifier] Auto-collected LLM labels: added=${labelResult.added}, skipped=${labelResult.skipped}`);
         } catch (labelError) {
           console.warn(`[ArticleSentimentClassifier] Failed to collect LLM labels (non-blocking): ${labelError.message}`);
         }
+      } else if (allNeutral) {
+        console.warn('[ArticleSentimentClassifier] Result all-neutral (likely LLM rate-limited) → skip label collection to avoid polluting training data');
       }
 
       return result;

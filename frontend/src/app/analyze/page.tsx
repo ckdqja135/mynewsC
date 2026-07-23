@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, type ReactNode } from 'react';
 import { NewsApiService } from '@/services/newsApi';
 import type { NewsAnalysisResponse, AnalysisType, AnalysisSource } from '@/types/news';
 import { SENTIMENT_META } from '@/constants/sentiment';
@@ -33,9 +33,39 @@ function domainOf(url: string): string {
   }
 }
 
+function articleTime(iso: string | null | undefined): string {
+  if (!iso) return '';
+  const t = new Date(iso).getTime();
+  if (Number.isNaN(t)) return '';
+  const s = Math.max(0, Math.floor((Date.now() - t) / 1000));
+  if (s < 60) return '방금';
+  const m = Math.floor(s / 60);
+  if (m < 60) return `${m}분 전`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return `${h}시간 전`;
+  return `${Math.floor(h / 24)}일 전`;
+}
+
 // 기사 제목 뒤에 스크래핑으로 붙는 '새 창 열림' 등 잔여 텍스트 정리
 function cleanTitle(t: string): string {
   return (t || '').replace(/\s*새 창 열림\s*$/, '').trim();
+}
+
+// 기술적 원문 에러(예: "400 status code (no body)")를 사용자에게 그대로 노출하지 않고
+// 상황별 친절한 안내로 변환한다. 원문은 콘솔에만 남긴다.
+function friendlyAnalyzeError(e: unknown): string {
+  const msg = e instanceof Error ? e.message : String(e || '');
+  if (/No response from server|connection|network|연결/i.test(msg)) {
+    return '서버에 연결하지 못했어요. 네트워크 상태를 확인하고 다시 시도해 주세요.';
+  }
+  if (/No articles found|찾지|404/i.test(msg)) {
+    return '해당 주제의 최신 기사를 찾지 못했어요. 다른 키워드로 시도해 보세요.';
+  }
+  if (/rate|한도|429/i.test(msg)) {
+    return 'AI 분석 요청이 잠시 몰렸어요. 잠깐 뒤에 다시 시도해 주세요.';
+  }
+  // 그 외(LLM 400 등 기술적 오류)는 원문을 숨기고 일반 안내를 보여준다.
+  return 'AI 분석에 일시적으로 실패했어요. 잠시 후 다시 시도하거나, 분석 깊이를 낮춰 보세요.';
 }
 
 export default function ReportPage() {
@@ -47,6 +77,7 @@ export default function ReportPage() {
   const [report, setReport] = useState<NewsAnalysisResponse | null>(null);
   const [reportMeta, setReportMeta] = useState<{ persp: number; depth: number; topic: string } | null>(null);
   const [error, setError] = useState('');
+  const [highlightSrc, setHighlightSrc] = useState<number | null>(null);
   const [excludedSources, setExcludedSources] = useState<Set<string>>(new Set());
 
   const stepTimer = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -104,7 +135,8 @@ export default function ReportPage() {
       setReportMeta({ persp, depth, topic: t });
       setScreen('report');
     } catch (e) {
-      setError(e instanceof Error ? e.message : '분석에 실패했습니다');
+      console.error('[AI리포트] 분석 실패:', e); // 원본 에러는 콘솔에만 남긴다
+      setError(friendlyAnalyzeError(e));
       setScreen('form');
     } finally {
       clearTimer();
@@ -278,6 +310,41 @@ export default function ReportPage() {
       }
     }
 
+    // 핵심 포인트의 [참고 N] 클릭 → 근거 기사 N번으로 스크롤 + 강조
+    const onCite = (idx: number) => {
+      setHighlightSrc(idx);
+      const el = document.getElementById(`report-src-${idx}`);
+      if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      window.setTimeout(() => setHighlightSrc((cur) => (cur === idx ? null : cur)), 1600);
+    };
+    const renderFinding = (text: string): ReactNode[] => {
+      const nodes: ReactNode[] = [];
+      const re = /\[참고\s*(\d+)\]/g;
+      let last = 0;
+      let m: RegExpExecArray | null;
+      let k = 0;
+      while ((m = re.exec(text)) !== null) {
+        if (m.index > last) nodes.push(<span key={k++}>{text.slice(last, m.index)}</span>);
+        const n = parseInt(m[1], 10);
+        const valid = n >= 1 && n <= sources.length;
+        nodes.push(
+          <button
+            key={k++}
+            type="button"
+            className={styles.citeChip}
+            disabled={!valid}
+            onClick={() => valid && onCite(n - 1)}
+            title={valid ? `근거 기사 ${n}번으로 이동` : undefined}
+          >
+            참고 {n}
+          </button>
+        );
+        last = m.index + m[0].length;
+      }
+      if (last < text.length) nodes.push(<span key={k++}>{text.slice(last)}</span>);
+      return nodes;
+    };
+
     return (
       <div className={styles.reportWrap}>
         <div className={styles.reportHead}>
@@ -323,7 +390,7 @@ export default function ReportPage() {
             {findings.map((f, i) => (
               <div key={i} className={styles.findingCard}>
                 <span className={styles.findingNum}>{i + 1}</span>
-                <span className={styles.findingText}>{f}</span>
+                <span className={styles.findingText}>{renderFinding(f)}</span>
               </div>
             ))}
           </div>
@@ -331,22 +398,48 @@ export default function ReportPage() {
 
         {sources.length > 0 && (
           <div className={styles.section}>
-            <span className={styles.cardTitle}>분석에 사용된 기사</span>
+            <span className={styles.cardTitle}>근거 기사 · 분석에 사용된 기사 ({sources.length})</span>
             <div className={styles.sourceList}>
               {sources.map((n, i) => (
                 <a
                   key={n.url || i}
-                  className={styles.sourceRow}
+                  id={`report-src-${i}`}
+                  className={`${styles.sourceRow} ${highlightSrc === i ? styles.sourceRowHighlight : ''}`}
                   href={n.url}
                   target="_blank"
                   rel="noopener noreferrer"
                 >
-                  <span className={styles.sourceSrc}>{domainOf(n.url)}</span>
+                  <span className={styles.sourceNum}>{i + 1}</span>
+                  <span className={styles.sourceSrc}>{n.press || domainOf(n.url)}</span>
                   <span className={styles.sourceTitle}>{cleanTitle(n.title)}</span>
-                  <span className={styles.sourceScore}>유사도 {Math.round((n.score ?? 0) * 100)}%</span>
+                  <span className={styles.sourceMeta}>
+                    {n.publishedAt && articleTime(n.publishedAt) && (
+                      <span className={styles.sourceTime}>{articleTime(n.publishedAt)}</span>
+                    )}
+                    <span className={styles.sourceScore}>유사도 {Math.round((n.score ?? 0) * 100)}%</span>
+                  </span>
                 </a>
               ))}
             </div>
+          </div>
+        )}
+
+        {report.stats && (
+          <p className={styles.statsLine}>
+            수집 {report.stats.collected.toLocaleString()}건 · 중복 제거 후 {report.stats.afterDedup.toLocaleString()}건 ·
+            {' '}본문 {report.stats.bodyFetched}/{report.stats.bodyFetched + report.stats.bodyFailed}건 확보 ·
+            {' '}근거 {report.stats.contextArticles}건
+          </p>
+        )}
+
+        {report.limitations && report.limitations.length > 0 && (
+          <div className={styles.limitCard}>
+            <span className={styles.limitTitle}>⚠️ 분석 한계 · 주의</span>
+            <ul className={styles.limitList}>
+              {report.limitations.map((l, i) => (
+                <li key={i}>{l}</li>
+              ))}
+            </ul>
           </div>
         )}
 
