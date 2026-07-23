@@ -3062,9 +3062,60 @@
 /* 분석 플레이스홀더 */
 .analysisPlaceholder {
   text-align: center;
-  padding: 40px 20px;
+  padding: 32px 20px;
   color: var(--text-secondary);
   font-size: 14px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+}
+
+.analysisPlaceholderTitle {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text-primary);
+  margin: 0;
+}
+
+.analysisPlaceholderDesc {
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text-secondary);
+  margin: 0;
+  max-width: 320px;
+}
+
+.startAnalysisButton {
+  margin-top: 8px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 11px 22px;
+  border: none;
+  border-radius: 10px;
+  background: var(--accent-color);
+  color: #ffffff;
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: filter 0.15s ease, opacity 0.15s ease;
+}
+
+.startAnalysisButton:hover:not(:disabled) {
+  filter: brightness(0.94);
+}
+
+.startAnalysisButton:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.analysisPlaceholderHint {
+  font-size: 11px;
+  color: var(--text-secondary);
+  opacity: 0.8;
+  margin: 0;
 }
 
 /* 태블릿 반응형 */

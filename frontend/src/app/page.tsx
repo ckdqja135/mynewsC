@@ -1449,11 +1449,9 @@ export default function Home() {
         );
       }
 
-      // 시맨틱 검색일 때만 AI 분석 + 감성 분류 자동 실행
-      if (mode === 'semantic' && responseArticles.length > 0) {
-        console.log(`[Search] semantic search completed, automatically running analysis...`);
-        performAnalysis(searchQuery, responseArticles);
-      }
+      // AI 분석은 자동 실행하지 않는다. 사용자가 결과 패널의 'AI 분석 시작' 버튼으로 직접 실행한다.
+      // (시맨틱 검색의 자동 분석은 /analyze 페이지와 기능이 중복되고, 매 검색마다 불필요한
+      //  LLM 호출/비용을 유발하므로 명시적 트리거로 변경)
     } catch (err) {
       setError(err instanceof Error ? err.message : '뉴스를 불러오는데 실패했습니다');
       setArticles([]);
@@ -2349,7 +2347,7 @@ export default function Home() {
                     <div className={styles.helpTooltip}>
                       <span className={styles.helpIcon}>?</span>
                       <div className={styles.tooltipContent}>
-                        <p><strong>자동 분석:</strong> 시맨틱 검색 시 상위 100개 기사를 AI가 자동 분석합니다.</p>
+                        <p><strong>실행 방법:</strong> &lsquo;AI 분석 시작&rsquo; 버튼을 누르면 상위 100개 기사를 AI가 분석합니다.</p>
                         <p><strong>분석 내용:</strong></p>
                         <ul>
                           <li>📋 핵심 요약</li>
@@ -2569,7 +2567,21 @@ export default function Home() {
 
                     {!analysisData && !analysisLoading && !analysisError && lastSearchQuery && articles.length > 0 && (
                       <div className={styles.analysisPlaceholder}>
-                        <p>검색 결과가 준비되었습니다.</p>
+                        <p className={styles.analysisPlaceholderTitle}>이 검색 결과를 AI로 분석해 보세요</p>
+                        <p className={styles.analysisPlaceholderDesc}>
+                          핵심 요약 · 주요 포인트 · 감성(긍정/부정) · 트렌드를 정리하고 근거 기사를 함께 보여줍니다.
+                        </p>
+                        <button
+                          type="button"
+                          className={styles.startAnalysisButton}
+                          onClick={() => performAnalysis(lastSearchQuery, articles)}
+                          disabled={analysisLoading}
+                        >
+                          <span aria-hidden="true">✨</span> AI 분석 시작
+                        </button>
+                        <p className={styles.analysisPlaceholderHint}>
+                          약 30초~1분 소요 · 상위 {Math.min(articles.length, 100)}개 기사 기준
+                        </p>
                       </div>
                     )}
                   </div>

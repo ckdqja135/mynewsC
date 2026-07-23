@@ -1,475 +1,370 @@
 'use client';
 
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { NewsApiService } from '@/services/newsApi';
-import type { NewsAnalysisResponse, AnalysisType, ArticleWithSentiment, SentimentType, SentimentAnalysis, NewsArticle, AnalysisSource } from '@/types/news';
+import type { NewsAnalysisResponse, AnalysisType, AnalysisSource } from '@/types/news';
+import { SENTIMENT_META } from '@/constants/sentiment';
 import styles from './analyze.module.css';
 
-export default function AnalyzePage() {
-  const [query, setQuery] = useState('');
-  const [analysisType, setAnalysisType] = useState<AnalysisType>('comprehensive');
-  const [numArticles, setNumArticles] = useState(20);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState('');
-  const [analysis, setAnalysis] = useState<NewsAnalysisResponse | null>(null);
-  const [excludedSources, setExcludedSources] = useState<Set<string>>(new Set());
-  const [feedbackMap, setFeedbackMap] = useState<Record<string, 'like' | 'dislike'>>({});
+// 분석 관점 → 백엔드 analysis_type 매핑 (실제 백엔드가 지원하는 4종에 대응)
+const PERSPECTIVES: { key: AnalysisType; name: string; desc: string }[] = [
+  { key: 'comprehensive', name: '종합', desc: '감성·트렌드·핵심 포인트를 모두 포함한 가장 완전한 분석' },
+  { key: 'sentiment', name: '논조', desc: '긍정·부정 측면과 전반적인 어조를 짚어 봅니다' },
+  { key: 'key_points', name: '쟁점', desc: '가장 중요한 핵심 포인트와 논점을 정리합니다' },
+  { key: 'trend', name: '트렌드', desc: '주요 토픽과 신흥 트렌드, 관심 흐름을 추적합니다' },
+];
 
-  // 감성 필터 관련 state
-  const [sentimentFilter, setSentimentFilter] = useState<Set<SentimentType>>(
-    new Set(['positive', 'negative', 'neutral'])
-  );
-  const [articlesWithSentiment, setArticlesWithSentiment] = useState<ArticleWithSentiment[]>([]);
-  const [sentimentCounts, setSentimentCounts] = useState({
-    positive: 0,
-    negative: 0,
-    neutral: 0
-  });
+// 분석 깊이 → 기사 수(num) 매핑
+const DEPTHS: { name: string; sub: string; num: number }[] = [
+  { name: '빠르게', sub: '기사 30개 · 약 30초', num: 30 },
+  { name: '표준', sub: '기사 100개 · 약 1분', num: 100 },
+  { name: '심층', sub: '기사 500개 · 약 2~3분', num: 500 },
+];
+
+const LOAD_STEPS = ['관련 기사 수집 중', '본문 읽고 핵심 추출 중', '관점별 분석 정리 중', '리포트 작성 중'];
+
+type Screen = 'form' | 'loading' | 'report';
+
+function domainOf(url: string): string {
+  try {
+    return new URL(url).hostname.replace(/^www\./, '');
+  } catch {
+    return '출처';
+  }
+}
+
+// 기사 제목 뒤에 스크래핑으로 붙는 '새 창 열림' 등 잔여 텍스트 정리
+function cleanTitle(t: string): string {
+  return (t || '').replace(/\s*새 창 열림\s*$/, '').trim();
+}
+
+export default function ReportPage() {
+  const [topic, setTopic] = useState('');
+  const [persp, setPersp] = useState(0);
+  const [depth, setDepth] = useState(1);
+  const [screen, setScreen] = useState<Screen>('form');
+  const [loadStep, setLoadStep] = useState(0);
+  const [report, setReport] = useState<NewsAnalysisResponse | null>(null);
+  const [reportMeta, setReportMeta] = useState<{ persp: number; depth: number; topic: string } | null>(null);
+  const [error, setError] = useState('');
+  const [excludedSources, setExcludedSources] = useState<Set<string>>(new Set());
+
+  const stepTimer = useRef<ReturnType<typeof setInterval> | null>(null);
+  const runningRef = useRef(false);
 
   useEffect(() => {
-    // Load excluded sources from localStorage
-    const savedExcludedSources = localStorage.getItem('excludedSources');
-    if (savedExcludedSources) {
-      try {
-        const parsed = JSON.parse(savedExcludedSources);
-        if (Array.isArray(parsed)) {
-          setExcludedSources(new Set(parsed));
-        }
-      } catch (e) {
-        console.error('Failed to load excluded sources:', e);
+    try {
+      const saved = localStorage.getItem('excludedSources');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed)) setExcludedSources(new Set(parsed));
       }
+    } catch {
+      /* 무시 */
     }
   }, []);
 
-  // 감성 분류 함수 (클라이언트 사이드)
-  const classifyArticlesBySentiment = useCallback((
-    articles: NewsArticle[],
-    sentiment: SentimentAnalysis | null
-  ): ArticleWithSentiment[] => {
-    if (!sentiment || !articles || articles.length === 0) {
-      return articles.map(a => ({
-        ...a,
-        sentiment: 'neutral' as SentimentType,
-        sentimentScore: 0,
-        matchedKeywords: []
-      }));
-    }
-
-    // 키워드 추출 함수
-    const extractKeywords = (text: string): string[] => {
-      if (!text) return [];
-      return text
-        .split(/\s+/)
-        .filter(w => w.length >= 2)
-        .filter((word, index, self) => self.indexOf(word) === index); // 중복 제거
-    };
-
-    // 긍정/부정 키워드 추출
-    const positiveKeywords = extractKeywords(
-      (sentiment.positive_aspects || []).join(' ')
-    );
-    const negativeKeywords = extractKeywords(
-      (sentiment.negative_aspects || []).join(' ')
-    );
-
-    return articles.map(article => {
-      const text = `${article.title} ${article.snippet || ''}`.toLowerCase();
-
-      // 키워드 매칭 점수 계산
-      const positiveScore = positiveKeywords.filter(k =>
-        text.includes(k.toLowerCase())
-      ).length;
-
-      const negativeScore = negativeKeywords.filter(k =>
-        text.includes(k.toLowerCase())
-      ).length;
-
-      // 감성 분류
-      if (positiveScore > negativeScore && positiveScore > 0) {
-        return {
-          ...article,
-          sentiment: 'positive' as SentimentType,
-          sentimentScore: positiveScore,
-          matchedKeywords: positiveKeywords
-        };
-      } else if (negativeScore > positiveScore && negativeScore > 0) {
-        return {
-          ...article,
-          sentiment: 'negative' as SentimentType,
-          sentimentScore: negativeScore,
-          matchedKeywords: negativeKeywords
-        };
-      } else {
-        return {
-          ...article,
-          sentiment: 'neutral' as SentimentType,
-          sentimentScore: 0,
-          matchedKeywords: []
-        };
-      }
-    });
+  useEffect(() => () => {
+    if (stepTimer.current) clearInterval(stepTimer.current);
   }, []);
 
-  // 필터링된 기사 계산
-  const filteredArticles = useMemo(() => {
-    return articlesWithSentiment.filter(article =>
-      sentimentFilter.has(article.sentiment)
-    );
-  }, [articlesWithSentiment, sentimentFilter]);
+  const clearTimer = () => {
+    if (stepTimer.current) {
+      clearInterval(stepTimer.current);
+      stepTimer.current = null;
+    }
+  };
 
-  const handleAnalyze = async (e: React.FormEvent) => {
-    e.preventDefault();
-
-    if (!query.trim()) {
-      setError('검색어를 입력해주세요');
+  const run = async () => {
+    if (runningRef.current) return;
+    const t = topic.trim();
+    if (!t) {
+      setError('분석할 주제를 입력해주세요');
       return;
     }
-
-    setLoading(true);
+    runningRef.current = true;
     setError('');
-    setAnalysis(null);
+    setScreen('loading');
+    setLoadStep(0);
+    // 진행 단계 애니메이션 (마지막 단계에서 응답을 기다림)
+    stepTimer.current = setInterval(() => {
+      setLoadStep((s) => Math.min(s + 1, LOAD_STEPS.length - 1));
+    }, 1300);
 
     try {
-      const result = await NewsApiService.analyzeNews({
-        q: query,
+      const res = await NewsApiService.analyzeNews({
+        q: t,
         hl: 'ko',
         gl: 'kr',
-        num: numArticles,
-        analysis_type: analysisType,
+        num: DEPTHS[depth].num,
+        analysis_type: PERSPECTIVES[persp].key,
         excluded_sources: Array.from(excludedSources),
       });
-
-      setAnalysis(result);
-
-      // 분석 완료 후 감성 분류 실행
-      // 임시로 빈 배열을 사용 (실제로는 API에서 articles를 반환하지 않음)
-      // 감성 분류는 분석 결과의 aspects 기반으로만 표시
-      const dummyArticles: NewsArticle[] = [];
-      const classified = classifyArticlesBySentiment(dummyArticles, result.sentiment);
-      setArticlesWithSentiment(classified);
-
-      // 감성별 개수 계산
-      const counts = classified.reduce(
-        (acc, article) => {
-          acc[article.sentiment]++;
-          return acc;
-        },
-        { positive: 0, negative: 0, neutral: 0 }
-      );
-      setSentimentCounts(counts);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : '분석에 실패했습니다');
+      setReport(res);
+      setReportMeta({ persp, depth, topic: t });
+      setScreen('report');
+    } catch (e) {
+      setError(e instanceof Error ? e.message : '분석에 실패했습니다');
+      setScreen('form');
     } finally {
-      setLoading(false);
+      clearTimer();
+      runningRef.current = false;
     }
   };
 
-  const handleFeedback = async (articleId: string, feedback: 'like' | 'dislike') => {
-    if (feedbackMap[articleId]) return; // 이미 피드백 제출됨
-    try {
-      await NewsApiService.submitFeedback({ articleId, feedback });
-      setFeedbackMap(prev => ({ ...prev, [articleId]: feedback }));
-    } catch (err) {
-      console.error('Feedback failed:', err);
-    }
+  const reset = () => {
+    setScreen('form');
+    setReport(null);
+    setError('');
   };
 
-  const getSentimentEmoji = (sentiment: string) => {
-    switch (sentiment.toLowerCase()) {
-      case 'positive': return '🟢';
-      case 'negative': return '🔴';
-      case 'neutral': return '🟡';
-      default: return '⚪';
+  const saveReport = () => {
+    if (!report || !reportMeta) return;
+    const lines: string[] = [
+      `AI 분석 리포트 · ${reportMeta.topic}`,
+      `${PERSPECTIVES[reportMeta.persp].name} 관점 · ${DEPTHS[reportMeta.depth].name} 분석 · 기사 ${report.articles_analyzed}개`,
+      '',
+      '[요약]',
+      report.summary || '',
+      '',
+      '[핵심 포인트]',
+      ...(report.key_points || []).map((p, i) => `${i + 1}. ${p}`),
+    ];
+    if (report.sources?.length) {
+      lines.push('', '[분석에 사용된 기사]');
+      report.sources.forEach((s) => lines.push(`- ${cleanTitle(s.title)} (${s.url})`));
     }
+    const blob = new Blob([lines.join('\n')], { type: 'text/plain;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `AI리포트-${reportMeta.topic}.txt`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
   };
 
-  const getSentimentColor = (score: number) => {
-    if (score > 0.3) return '#4caf50';
-    if (score < -0.3) return '#f44336';
-    return '#ff9800';
+  // ── 폼 화면 ──
+  const renderForm = () => (
+    <>
+      <div className={styles.pageHead}>
+        <h1 className={styles.pageTitle}>AI 뉴스 분석</h1>
+        <p className={styles.pageSub}>뉴스를 심층 분석해 리포트로 정리해 드립니다</p>
+      </div>
+
+      {error && <div className={styles.errorBanner}>❌ {error}</div>}
+
+      <div className={styles.formCard}>
+        <div className={styles.field}>
+          <label htmlFor="topic" className={styles.fieldLabel}>어떤 주제를 분석할까요?</label>
+          <input
+            id="topic"
+            type="text"
+            value={topic}
+            onChange={(e) => setTopic(e.target.value)}
+            onKeyDown={(e) => { if (e.key === 'Enter') run(); }}
+            placeholder="예: 인공지능, 경제 동향, 기후 변화…"
+            className={styles.topicInput}
+          />
+        </div>
+
+        <div className={styles.field}>
+          <div className={styles.fieldHead}>
+            <span className={styles.fieldLabelSm}>분석 관점</span>
+            <span className={styles.fieldHint}>어떤 시각으로 볼지 선택하세요</span>
+          </div>
+          <div className={styles.optionRow}>
+            {PERSPECTIVES.map((p, i) => (
+              <button
+                key={p.key}
+                type="button"
+                className={`${styles.optionBtn} ${persp === i ? styles.optionBtnOn : ''}`}
+                onClick={() => setPersp(i)}
+                aria-pressed={persp === i}
+              >
+                {p.name}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className={styles.field}>
+          <div className={styles.fieldHead}>
+            <span className={styles.fieldLabelSm}>분석 깊이</span>
+            <span className={styles.fieldHint}>기사 수와 분석 강도가 달라져요</span>
+          </div>
+          <div className={styles.optionRow}>
+            {DEPTHS.map((d, i) => (
+              <button
+                key={d.name}
+                type="button"
+                className={`${styles.optionBtnTall} ${depth === i ? styles.optionBtnOn : ''}`}
+                onClick={() => setDepth(i)}
+                aria-pressed={depth === i}
+              >
+                <span className={styles.optionName}>{d.name}</span>
+                <span className={`${styles.optionSub} ${depth === i ? styles.optionSubOn : ''}`}>{d.sub}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className={styles.summaryLine}>
+          <span className={styles.summaryBar} />
+          <p className={styles.summaryText}>
+            {PERSPECTIVES[persp].name} 분석: {PERSPECTIVES[persp].desc}
+          </p>
+        </div>
+
+        <button type="button" className={styles.ctaButton} onClick={run}>
+          AI 리포트 만들기
+        </button>
+      </div>
+    </>
+  );
+
+  // ── 로딩 화면 ──
+  const renderLoading = () => (
+    <div className={styles.loadingWrap}>
+      <div className={styles.loadingSpinner} />
+      <div className={styles.loadingTexts}>
+        <span className={styles.loadingTitle}>&lsquo;{topic.trim() || '주제'}&rsquo; 분석하고 있어요</span>
+        <span className={styles.loadingSub}>잠시만 기다려 주세요</span>
+      </div>
+      <div className={styles.stepList}>
+        {LOAD_STEPS.map((label, i) => {
+          const done = i < loadStep;
+          const current = i === loadStep;
+          return (
+            <div key={label} className={`${styles.stepRow} ${i <= loadStep ? styles.stepRowActive : ''}`}>
+              <span className={`${styles.stepIcon} ${done ? styles.stepIconDone : current ? styles.stepIconCurrent : ''}`}>
+                {done ? '✓' : i + 1}
+              </span>
+              <span className={`${styles.stepText} ${current ? styles.stepTextCurrent : ''}`}>{label}</span>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+
+  // ── 리포트 화면 ──
+  const renderReport = () => {
+    if (!report || !reportMeta) return null;
+    const pName = PERSPECTIVES[reportMeta.persp].name;
+    const depthName = DEPTHS[reportMeta.depth].name;
+
+    // 감성 분포: LLM 종합 감성 점수(-1~1)를 3구간으로 투명하게 환산
+    const s = Math.max(-1, Math.min(1, report.sentiment?.sentiment_score ?? 0));
+    const pos = Math.round(Math.max(0, s) * 100);
+    const neg = Math.round(Math.max(0, -s) * 100);
+    const neu = Math.max(0, 100 - pos - neg);
+    const dist = [
+      { label: SENTIMENT_META.positive.label, pct: pos, color: '#4e9d7c' },
+      { label: SENTIMENT_META.neutral.label, pct: neu, color: '#c4c9ce' },
+      { label: SENTIMENT_META.negative.label, pct: neg, color: '#e5806b' },
+    ];
+
+    const findings = report.key_points || [];
+
+    // 출처: url 기준 중복 제거 (백엔드가 청크 단위라 같은 기사가 중복됨)
+    const seen = new Set<string>();
+    const sources: AnalysisSource[] = [];
+    for (const src of report.sources || []) {
+      if (!seen.has(src.url)) {
+        seen.add(src.url);
+        sources.push(src);
+      }
+    }
+
+    return (
+      <div className={styles.reportWrap}>
+        <div className={styles.reportHead}>
+          <div className={styles.reportKicker}>
+            <span className={styles.kickerLabel}>AI 분석 리포트</span>
+            <span className={styles.kickerDot} />
+            <span className={styles.kickerTime}>
+              {report.generated_at ? new Date(report.generated_at).toLocaleString('ko-KR') : '방금'}
+            </span>
+          </div>
+          <h1 className={styles.reportTitle}>{reportMeta.topic}</h1>
+          <div className={styles.reportTags}>
+            <span className={`${styles.tag} ${styles.tagAccent}`}>{pName} 관점</span>
+            <span className={styles.tag}>{depthName} 분석</span>
+            <span className={styles.tag}>기사 {report.articles_analyzed}개</span>
+          </div>
+        </div>
+
+        {report.sentiment && (
+          <div className={styles.sentimentCard}>
+            <span className={styles.cardTitle}>보도 감성 분포</span>
+            <div className={styles.sentimentBar}>
+              {dist.map((d) => (
+                d.pct > 0 ? <div key={d.label} style={{ width: `${d.pct}%`, background: d.color }} /> : null
+              ))}
+            </div>
+            <div className={styles.sentimentLegend}>
+              {dist.map((d) => (
+                <div key={d.label} className={styles.legendItem}>
+                  <span className={styles.legendDot} style={{ background: d.color }} />
+                  <span className={styles.legendLabel}>{d.label}</span>
+                  <span className={styles.legendPct}>{d.pct}%</span>
+                </div>
+              ))}
+            </div>
+            <span className={styles.sentimentNote}>※ AI 종합 감성 점수({s.toFixed(2)}) 기준으로 환산한 값입니다.</span>
+          </div>
+        )}
+
+        {findings.length > 0 && (
+          <div className={styles.section}>
+            <span className={styles.cardTitle}>핵심 포인트</span>
+            {findings.map((f, i) => (
+              <div key={i} className={styles.findingCard}>
+                <span className={styles.findingNum}>{i + 1}</span>
+                <span className={styles.findingText}>{f}</span>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {sources.length > 0 && (
+          <div className={styles.section}>
+            <span className={styles.cardTitle}>분석에 사용된 기사</span>
+            <div className={styles.sourceList}>
+              {sources.map((n, i) => (
+                <a
+                  key={n.url || i}
+                  className={styles.sourceRow}
+                  href={n.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  <span className={styles.sourceSrc}>{domainOf(n.url)}</span>
+                  <span className={styles.sourceTitle}>{cleanTitle(n.title)}</span>
+                  <span className={styles.sourceScore}>유사도 {Math.round((n.score ?? 0) * 100)}%</span>
+                </a>
+              ))}
+            </div>
+          </div>
+        )}
+
+        <div className={styles.reportActions}>
+          <button type="button" className={styles.actionGhost} onClick={reset}>새 분석 시작</button>
+          <button type="button" className={styles.actionPrimary} onClick={saveReport}>리포트 저장</button>
+        </div>
+      </div>
+    );
   };
 
   return (
-    <div className={styles.container}>
-      <div className={styles.pageTitle}>
-        <div className={styles.titleWithTooltip}>
-          <h1>🤖 AI 뉴스 분석</h1>
-          <div className={styles.tooltipWrapper}>
-            <span className={styles.helpIcon}>?</span>
-            <div className={styles.tooltip}>
-              <h4>AI 뉴스 분석이란?</h4>
-              <p><strong>데이터 소스:</strong> Google News, Naver, RSS 피드 (32개 언론사)</p>
-              <p><strong>분석 엔진:</strong> Cerebras LLM (초고속 AI 모델)</p>
-              <p><strong>분석 방법:</strong></p>
-              <ul>
-                <li>최신 뉴스 기사 수집 및 중복 제거</li>
-                <li>AI가 기사 내용을 읽고 패턴 파악</li>
-                <li>감성, 트렌드, 핵심 정보 추출</li>
-                <li>한국어로 종합 분석 결과 생성</li>
-              </ul>
-              <p><strong>소요 시간:</strong> 약 30초 ~ 2분</p>
-            </div>
-          </div>
-        </div>
-        <p>Cerebras LLM으로 뉴스를 심층 분석합니다</p>
+    <div className={styles.page}>
+      <div className={styles.main}>
+        {screen === 'form' && renderForm()}
+        {screen === 'loading' && renderLoading()}
+        {screen === 'report' && renderReport()}
       </div>
-
-      <main className={styles.main}>
-        <form onSubmit={handleAnalyze} className={styles.analysisForm}>
-          <div className={styles.formGroup}>
-            <label htmlFor="query">분석할 주제</label>
-            <input
-              id="query"
-              type="text"
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              placeholder="예: 인공지능, 경제 동향, 기후 변화..."
-              className={styles.input}
-              disabled={loading}
-            />
-          </div>
-
-          <div className={styles.formRow}>
-            <div className={styles.formGroup}>
-              <label htmlFor="analysisType">분석 유형</label>
-              <select
-                id="analysisType"
-                value={analysisType}
-                onChange={(e) => setAnalysisType(e.target.value as AnalysisType)}
-                className={styles.select}
-                disabled={loading}
-              >
-                <option value="comprehensive">종합 분석 (추천)</option>
-                <option value="sentiment">감성 분석</option>
-                <option value="trend">트렌드 분석</option>
-                <option value="key_points">핵심 포인트</option>
-              </select>
-            </div>
-
-            <div className={styles.formGroup}>
-              <label htmlFor="numArticles">분석할 기사 수</label>
-              <select
-                id="numArticles"
-                value={numArticles}
-                onChange={(e) => setNumArticles(Number(e.target.value))}
-                className={styles.select}
-                disabled={loading}
-              >
-                <option value={10}>10개</option>
-                <option value={15}>15개</option>
-                <option value={20}>20개 (추천)</option>
-                <option value={30}>30개</option>
-                <option value={50}>50개</option>
-              </select>
-            </div>
-          </div>
-
-          <div className={styles.analysisTypeInfo}>
-            {analysisType === 'comprehensive' && (
-              <p>💡 종합 분석: 감성, 트렌드, 핵심 포인트를 모두 포함한 완전한 분석</p>
-            )}
-            {analysisType === 'sentiment' && (
-              <p>💡 감성 분석: 뉴스의 긍정/부정 측면과 전반적인 감성 파악</p>
-            )}
-            {analysisType === 'trend' && (
-              <p>💡 트렌드 분석: 주요 토픽, 신흥 트렌드, 핵심 인물/기관 파악</p>
-            )}
-            {analysisType === 'key_points' && (
-              <p>💡 핵심 포인트: 가장 중요한 정보만 간결하게 추출</p>
-            )}
-          </div>
-
-          <button
-            type="submit"
-            className={styles.analyzeButton}
-            disabled={loading}
-          >
-            {loading ? (
-              <>
-                <span className={styles.spinner}></span>
-                분석 중... (최대 2분 소요)
-              </>
-            ) : (
-              '🔍 분석 시작'
-            )}
-          </button>
-        </form>
-
-        {error && (
-          <div className={styles.error}>
-            ❌ {error}
-          </div>
-        )}
-
-        {analysis && (
-          <div className={styles.results}>
-            <div className={styles.resultHeader}>
-              <h2>분석 결과</h2>
-              <div className={styles.resultMeta}>
-                <span className={styles.badge}>{analysis.analysis_type}</span>
-                <span className={styles.meta}>
-                  📊 {analysis.articles_analyzed}개 기사 분석
-                </span>
-                <span className={styles.meta}>
-                  🕐 {new Date(analysis.generated_at).toLocaleString('ko-KR')}
-                </span>
-              </div>
-            </div>
-
-            {/* 요약 */}
-            <div className={styles.section}>
-              <h3>📋 요약</h3>
-              <p className={styles.summary}>{analysis.summary}</p>
-            </div>
-
-            {/* 핵심 포인트 */}
-            <div className={styles.section}>
-              <h3>🎯 핵심 포인트</h3>
-              <ul className={styles.keyPoints}>
-                {analysis.key_points.map((point, index) => (
-                  <li key={index}>{point}</li>
-                ))}
-              </ul>
-            </div>
-
-            {/* 감성 분석 */}
-            {analysis.sentiment && (
-              <div className={styles.section}>
-                <h3>💭 감성 분석</h3>
-                <div className={styles.sentimentCard}>
-                  <div className={styles.sentimentHeader}>
-                    <span className={styles.sentimentEmoji}>
-                      {getSentimentEmoji(analysis.sentiment.overall_sentiment)}
-                    </span>
-                    <div>
-                      <div className={styles.sentimentLabel}>
-                        전반적 감성: <strong>{analysis.sentiment.overall_sentiment}</strong>
-                      </div>
-                      <div className={styles.sentimentScore}>
-                        <div className={styles.scoreBar}>
-                          <div
-                            className={styles.scoreBarFill}
-                            style={{
-                              width: `${Math.abs(analysis.sentiment.sentiment_score) * 50 + 50}%`,
-                              backgroundColor: getSentimentColor(analysis.sentiment.sentiment_score),
-                              marginLeft: analysis.sentiment.sentiment_score < 0 ? 'auto' : '0',
-                            }}
-                          />
-                        </div>
-                        <span className={styles.scoreValue}>
-                          {analysis.sentiment.sentiment_score.toFixed(2)}
-                        </span>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className={styles.aspectsGrid}>
-                    <div className={styles.aspectCard}>
-                      <h4>✅ 긍정적 측면</h4>
-                      <ul>
-                        {analysis.sentiment.positive_aspects.map((aspect, index) => (
-                          <li key={index}>{aspect}</li>
-                        ))}
-                      </ul>
-                    </div>
-                    <div className={styles.aspectCard}>
-                      <h4>⚠️ 부정적 측면</h4>
-                      <ul>
-                        {analysis.sentiment.negative_aspects.map((aspect, index) => (
-                          <li key={index}>{aspect}</li>
-                        ))}
-                      </ul>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {/* 트렌드 분석 */}
-            {analysis.trends && (
-              <div className={styles.section}>
-                <h3>📈 트렌드 분석</h3>
-                <div className={styles.trendsGrid}>
-                  <div className={styles.trendCard}>
-                    <h4>🏷️ 주요 토픽</h4>
-                    <div className={styles.tags}>
-                      {analysis.trends.main_topics.map((topic, index) => (
-                        <span key={index} className={styles.tag}>{topic}</span>
-                      ))}
-                    </div>
-                  </div>
-                  <div className={styles.trendCard}>
-                    <h4>🚀 신흥 트렌드</h4>
-                    <div className={styles.tags}>
-                      {analysis.trends.emerging_trends.map((trend, index) => (
-                        <span key={index} className={styles.tag}>{trend}</span>
-                      ))}
-                    </div>
-                  </div>
-                  <div className={styles.trendCard}>
-                    <h4>👥 핵심 인물/기관</h4>
-                    <div className={styles.tags}>
-                      {analysis.trends.key_entities.map((entity, index) => (
-                        <span key={index} className={styles.tag}>{entity}</span>
-                      ))}
-                    </div>
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {/* 참고 소스 + 피드백 (Phase 3) */}
-            {analysis.sources && analysis.sources.length > 0 && (
-              <div className={styles.section}>
-                <h3>
-                  📎 참고 소스
-                  {analysis.confidence_score !== null && analysis.confidence_score !== undefined && (
-                    <span className={styles.confidenceBadge}>
-                      신뢰도 {Math.round(analysis.confidence_score * 100)}%
-                    </span>
-                  )}
-                </h3>
-                <p className={styles.sourceHelp}>이 분석에 사용된 기사입니다. 유용했나요?</p>
-                <ul className={styles.sourceList}>
-                  {analysis.sources.map((source: AnalysisSource, index: number) => {
-                    const fb = feedbackMap[source.url];
-                    return (
-                      <li key={index} className={styles.sourceItem}>
-                        <div className={styles.sourceInfo}>
-                          <a href={source.url} target="_blank" rel="noopener noreferrer" className={styles.sourceTitle}>
-                            {source.title}
-                          </a>
-                          <span className={styles.sourceScore}>
-                            유사도 {Math.round(source.score * 100)}%
-                          </span>
-                        </div>
-                        <div className={styles.feedbackButtons}>
-                          <button
-                            className={`${styles.feedbackBtn} ${fb === 'like' ? styles.feedbackActive : ''}`}
-                            onClick={() => handleFeedback(source.url, 'like')}
-                            disabled={!!fb}
-                            title="유용한 기사"
-                          >
-                            👍
-                          </button>
-                          <button
-                            className={`${styles.feedbackBtn} ${fb === 'dislike' ? styles.feedbackActive : ''}`}
-                            onClick={() => handleFeedback(source.url, 'dislike')}
-                            disabled={!!fb}
-                            title="관련 없는 기사"
-                          >
-                            👎
-                          </button>
-                        </div>
-                      </li>
-                    );
-                  })}
-                </ul>
-              </div>
-            )}
-          </div>
-        )}
-      </main>
     </div>
   );
 }

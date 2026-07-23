@@ -602,7 +602,7 @@ app.post('/api/news/analyze', async (req, res) => {
   if (params.error) return res.status(400).json({ detail: params.error });
 
   const { q, hl, gl, excluded_sources } = params;
-  const num = Math.min(Math.max(parseInt(req.body.num, 10) || 20, 1), 100);
+  const num = Math.min(Math.max(parseInt(req.body.num, 10) || 20, 1), 500);
   const analysisType = req.body.analysis_type || 'comprehensive';
   const daysBack = Math.min(Math.max(parseInt(req.body.days_back, 10) || 30, 1), 365);
   const providedArticles = req.body.articles; // 프론트엔드에서 필터링된 기사 전달 가능
@@ -667,7 +667,8 @@ app.post('/api/news/analyze', async (req, res) => {
     const { fetchArticleBodies } = require('./services/articleFetcher');
     const { chunkText } = require('./services/chunkingService');
 
-    const FETCH_LIMIT = 15;
+    // 분석 깊이(num)가 클수록 본문을 더 많이 읽는다 (RAG 후보 확대). 시간을 위해 상한 40.
+    const FETCH_LIMIT = Math.min(Math.max(15, Math.floor(num / 5)), 40);
     // Google News RSS URLs can't be fetched directly — prefer direct newspaper URLs
     const sortedForFetch = [...articlesToAnalyze].sort((a, b) => {
       const aIsGoogle = (a.url || '').includes('news.google.com') ? 1 : 0;
