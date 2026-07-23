@@ -613,10 +613,18 @@ app.post('/api/news/analyze', async (req, res) => {
   }
 
   // Check cache
+  // providedArticles가 다른데 q/num 등이 같으면 캐시가 섞이지 않도록,
+  // 제공된 기사들의 식별자 해시를 키에 포함한다.
+  // (기존엔 boolean(hasProvidedArticles)이라, 다른 기사셋이 같은 키로 충돌해 잘못된 결과 반환)
+  let providedHash = '';
+  if (Array.isArray(providedArticles) && providedArticles.length > 0) {
+    const idsig = providedArticles.map(a => (a && (a.id || a.url || a.title)) || '').join('|');
+    providedHash = require('crypto').createHash('md5').update(idsig).digest('hex').slice(0, 12);
+  }
   const cacheParams = {
     q, hl, gl, num, analysis_type: analysisType, days_back: daysBack,
     excluded_sources: [...excluded_sources].sort().join(','),
-    hasProvidedArticles: !!providedArticles,
+    providedHash,
   };
   const cached = analysisCache.get(cacheParams);
   if (cached) {
