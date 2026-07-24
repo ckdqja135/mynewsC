@@ -107,8 +107,8 @@ export default function TrendingKeywords({ onKeywordClick }: TrendingKeywordsPro
 
       {items.length > 0 && (
         <Link href="/trending" className={styles.moreBtn}>
-          <span className="material-symbols-outlined">add</span>
-          더보기
+          <span className={styles.moreBtnText}>실시간 순위 전체보기</span>
+          <span className="material-symbols-outlined">chevron_right</span>
         </Link>
       )}
 
