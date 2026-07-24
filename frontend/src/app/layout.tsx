@@ -2,9 +2,27 @@ import type { Metadata } from 'next';
 import './globals.css';
 import AppShell from '@/components/AppShell';
 
+const SITE_URL = 'https://mynews-c.vercel.app';
+const SITE_TITLE = '뉴스봇 · 나의 뉴스 비서';
+const SITE_DESCRIPTION = '실시간 인기 키워드부터 기사 감성 분석까지, 한눈에 보는 나의 뉴스 비서.';
+
 export const metadata: Metadata = {
+  metadataBase: new URL(SITE_URL),
   title: '뉴스봇',
-  description: '나의 뉴스 비서',
+  description: SITE_DESCRIPTION,
+  openGraph: {
+    type: 'website',
+    locale: 'ko_KR',
+    url: SITE_URL,
+    siteName: '뉴스봇',
+    title: SITE_TITLE,
+    description: SITE_DESCRIPTION,
+  },
+  twitter: {
+    card: 'summary_large_image',
+    title: SITE_TITLE,
+    description: SITE_DESCRIPTION,
+  },
 };
 
 export default function RootLayout({
