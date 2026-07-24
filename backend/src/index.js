@@ -6,6 +6,7 @@ const { createRateLimiter } = require('./middleware/rateLimit');
 const { NewsCrawler } = require('./services/newsCrawler');
 const { RSSParserService } = require('./services/rssParser');
 const { keywordSearchCache, semanticSearchCache, analysisCache } = require('./utils/cache');
+const { checkSearchQuery } = require('./utils/contentFilter');
 
 const app = express();
 
@@ -202,6 +203,10 @@ function validateSearchRequest(body) {
   const q = (body.q || '').trim();
   if (!q || q.length === 0 || q.length > 200) {
     return { error: 'Query must be 1-200 characters' };
+  }
+  // 부적절 검색어(욕설/비속어) 차단 — 뉴스 주제어는 막지 않는다
+  if (checkSearchQuery(q).blocked) {
+    return { error: '부적절한 검색어는 사용할 수 없어요. 다른 키워드로 검색해 주세요.' };
   }
   const hl = body.hl || 'ko';
   const gl = body.gl || 'kr';
@@ -430,6 +435,12 @@ app.post('/api/cache/clear', (req, res) => {
   semanticSearchCache.clear();
   analysisCache.clear();
   res.json({ status: 'success', message: 'All caches cleared' });
+});
+
+// LLM 큐/스로틀 상태 (동시 실행/대기 수 확인용)
+app.get('/api/llm/stats', (req, res) => {
+  const { llmLimiter } = require('./utils/llmLimiter');
+  res.json(llmLimiter.stats());
 });
 
 // ==================== News Search ====================

@@ -1,4 +1,5 @@
 const OpenAI = require('openai');
+const { llmLimiter } = require('../utils/llmLimiter');
 
 class CerebrasLLMService {
   constructor(apiKey) {
@@ -21,6 +22,13 @@ class CerebrasLLMService {
   // reasoning_effort 파라미터 (빈 문자열이면 파라미터 자체를 생략)
   _reasoningParam() {
     return this.reasoningEffort ? { reasoning_effort: this.reasoningEffort } : {};
+  }
+
+  // 모든 LLM 호출을 큐/스로틀 리미터를 통해 실행한다 (Cerebras 공유 한도 대응).
+  // 여러 사용자가 동시에 분석해도 요청이 한도 아래로 줄 세워져 429 실패 대신 잠깐 대기 후 성공한다.
+  _createCompletion(params) {
+    const { completions } = this.client.chat;
+    return llmLimiter.run(() => completions.create(params));
   }
 
   // LLM 응답에서 content를 안전하게 추출. 비어 있으면(추론 잘림/오류) 명확히 throw.
@@ -221,7 +229,7 @@ Please provide a detailed analysis in the following JSON format:
 
 Respond ONLY with valid JSON. No additional text.`;
 
-    const response = await this.client.chat.completions.create({
+    const response = await this._createCompletion({
       model: this.model,
       messages: [
         { role: 'system', content: 'You are a professional news analyst. Always respond in Korean (한국어) and in valid JSON format only.' },
@@ -297,7 +305,7 @@ Provide a sentiment analysis in the following JSON format:
 Sentiment score should be from -1.0 (very negative) to 1.0 (very positive).
 Respond ONLY with valid JSON.`;
 
-    const response = await this.client.chat.completions.create({
+    const response = await this._createCompletion({
       model: this.model,
       messages: [
         { role: 'system', content: 'You are a professional sentiment analyst. Always respond in Korean (한국어) and in valid JSON format only.' },
@@ -367,7 +375,7 @@ Provide a trend analysis in the following JSON format:
 
 Respond ONLY with valid JSON.`;
 
-    const response = await this.client.chat.completions.create({
+    const response = await this._createCompletion({
       model: this.model,
       messages: [
         { role: 'system', content: 'You are a professional trend analyst. Always respond in Korean (한국어) and in valid JSON format only.' },
@@ -432,7 +440,7 @@ Provide key points in the following JSON format:
 
 Focus on factual, actionable information. Respond ONLY with valid JSON.`;
 
-    const response = await this.client.chat.completions.create({
+    const response = await this._createCompletion({
       model: this.model,
       messages: [
         { role: 'system', content: 'You are a professional news summarizer. Always respond in Korean (한국어) and in valid JSON format only.' },
@@ -535,7 +543,7 @@ ${articlesText}
     const MAX_RETRIES = 3;
     for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
       try {
-        const response = await this.client.chat.completions.create({
+        const response = await this._createCompletion({
           model: this.model,
           messages: [
             { role: 'system', content: 'You are a relevance scoring assistant. Score each article\'s relevance to the search query. Respond with number and score (1-5) per line only.' },
@@ -616,7 +624,7 @@ ${articlesText}
     const MAX_RETRIES = 3;
     for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
       try {
-        const response = await this.client.chat.completions.create({
+        const response = await this._createCompletion({
           model: this.model,
           messages: [
             { role: 'system', content: 'You are a Korean news sentiment classifier. Classify each article based on its title AND content snippet. Focus on the OVERALL meaning, not individual words. Respond with number and one word per line.' },
@@ -736,7 +744,7 @@ ${list}
     const MAX_RETRIES = 3;
     for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
       try {
-        const response = await this.client.chat.completions.create({
+        const response = await this._createCompletion({
           model: this.model,
           messages: [
             { role: 'system', content: 'You extract concise Korean trending search keywords for a given news category from headlines. Merge duplicate issues, output short searchable keywords, one "number. keyword" per line.' },
@@ -809,7 +817,7 @@ ${list}
     const MAX_RETRIES = 3;
     for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
       try {
-        const response = await this.client.chat.completions.create({
+        const response = await this._createCompletion({
           model: this.model,
           messages: [
             { role: 'system', content: 'You are a Korean news keyword categorizer. Assign each trending search keyword to exactly one of the given categories. Output "number. category" per line, nothing else.' },

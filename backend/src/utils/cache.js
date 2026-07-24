@@ -83,9 +83,15 @@ class SearchCache {
   }
 }
 
-// Global cache instances
-const keywordSearchCache = new SearchCache(300);  // 5 minutes
-const semanticSearchCache = new SearchCache(300); // 5 minutes
-const analysisCache = new SearchCache(600);       // 10 minutes
+// Global cache instances — TTL은 .env로 조절 가능 (초 단위)
+// 분석 캐시는 LLM 호출을 아끼는 핵심이라 기본값을 넉넉히(30분) 둔다.
+// 같은 인기 주제를 여러 명이 분석하면 캐시 히트로 LLM 호출이 발생하지 않는다.
+const _ttl = (v, d) => {
+  const n = parseInt(v, 10);
+  return Number.isFinite(n) && n > 0 ? n : d;
+};
+const keywordSearchCache = new SearchCache(_ttl(process.env.CACHE_TTL_SEARCH, 300));    // 기본 5분
+const semanticSearchCache = new SearchCache(_ttl(process.env.CACHE_TTL_SEARCH, 300));   // 기본 5분
+const analysisCache = new SearchCache(_ttl(process.env.CACHE_TTL_ANALYSIS, 1800));      // 기본 30분
 
 module.exports = { SearchCache, keywordSearchCache, semanticSearchCache, analysisCache };

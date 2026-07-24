@@ -56,13 +56,16 @@ function cleanTitle(t: string): string {
 // 상황별 친절한 안내로 변환한다. 원문은 콘솔에만 남긴다.
 function friendlyAnalyzeError(e: unknown): string {
   const msg = e instanceof Error ? e.message : String(e || '');
+  if (/부적절|금지어|blocked/i.test(msg)) {
+    return '부적절한 검색어예요. 다른 키워드로 시도해 주세요.';
+  }
   if (/No response from server|connection|network|연결/i.test(msg)) {
     return '서버에 연결하지 못했어요. 네트워크 상태를 확인하고 다시 시도해 주세요.';
   }
   if (/No articles found|찾지|404/i.test(msg)) {
     return '해당 주제의 최신 기사를 찾지 못했어요. 다른 키워드로 시도해 보세요.';
   }
-  if (/rate|한도|429/i.test(msg)) {
+  if (/rate|한도|429|queue/i.test(msg)) {
     return 'AI 분석 요청이 잠시 몰렸어요. 잠깐 뒤에 다시 시도해 주세요.';
   }
   // 그 외(LLM 400 등 기술적 오류)는 원문을 숨기고 일반 안내를 보여준다.
