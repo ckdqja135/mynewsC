@@ -79,9 +79,11 @@ export default function ReportPage() {
   const [error, setError] = useState('');
   const [highlightSrc, setHighlightSrc] = useState<number | null>(null);
   const [excludedSources, setExcludedSources] = useState<Set<string>>(new Set());
+  const [shareMsg, setShareMsg] = useState('');
 
   const stepTimer = useRef<ReturnType<typeof setInterval> | null>(null);
   const runningRef = useRef(false);
+  const autoRanRef = useRef(false);
 
   useEffect(() => {
     try {
@@ -106,9 +108,9 @@ export default function ReportPage() {
     }
   };
 
-  const run = async () => {
+  const runAnalysis = async (rawTopic: string, perspIdx: number, depthIdx: number) => {
     if (runningRef.current) return;
-    const t = topic.trim();
+    const t = (rawTopic || '').trim();
     if (!t) {
       setError('분석할 주제를 입력해주세요');
       return;
@@ -127,12 +129,12 @@ export default function ReportPage() {
         q: t,
         hl: 'ko',
         gl: 'kr',
-        num: DEPTHS[depth].num,
-        analysis_type: PERSPECTIVES[persp].key,
+        num: DEPTHS[depthIdx].num,
+        analysis_type: PERSPECTIVES[perspIdx].key,
         excluded_sources: Array.from(excludedSources),
       });
       setReport(res);
-      setReportMeta({ persp, depth, topic: t });
+      setReportMeta({ persp: perspIdx, depth: depthIdx, topic: t });
       setScreen('report');
     } catch (e) {
       console.error('[AI리포트] 분석 실패:', e); // 원본 에러는 콘솔에만 남긴다
@@ -143,6 +145,30 @@ export default function ReportPage() {
       runningRef.current = false;
     }
   };
+
+  const run = () => runAnalysis(topic, persp, depth);
+
+  // 공유 링크(/analyze?q=…&type=…&depth=…)로 진입하면 자동으로 분석을 실행한다.
+  useEffect(() => {
+    if (autoRanRef.current) return;
+    autoRanRef.current = true;
+    try {
+      const sp = new URLSearchParams(window.location.search);
+      const q = (sp.get('q') || '').trim();
+      if (!q) return;
+      const pi = PERSPECTIVES.findIndex((p) => p.key === sp.get('type'));
+      const perspIdx = pi >= 0 ? pi : 0;
+      const dRaw = parseInt(sp.get('depth') || '', 10);
+      const depthIdx = Number.isInteger(dRaw) && dRaw >= 0 && dRaw < DEPTHS.length ? dRaw : 1;
+      setTopic(q);
+      setPersp(perspIdx);
+      setDepth(depthIdx);
+      runAnalysis(q, perspIdx, depthIdx);
+    } catch {
+      /* 무시 */
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const reset = () => {
     setScreen('form');
@@ -175,6 +201,47 @@ export default function ReportPage() {
     a.click();
     a.remove();
     URL.revokeObjectURL(url);
+  };
+
+  // 현재 리포트를 재현하는 공유용 URL (/analyze?q=…&type=…&depth=…)
+  const buildShareUrl = (): string => {
+    if (!reportMeta) return '';
+    const sp = new URLSearchParams({
+      q: reportMeta.topic,
+      type: PERSPECTIVES[reportMeta.persp].key,
+      depth: String(reportMeta.depth),
+    });
+    return `${window.location.origin}/analyze?${sp.toString()}`;
+  };
+
+  // 공유: 지원 시 네이티브 공유 시트, 아니면 클립보드 복사로 폴백
+  const shareReport = async () => {
+    const url = buildShareUrl();
+    if (!url || !reportMeta) return;
+    if (typeof navigator !== 'undefined' && typeof navigator.share === 'function') {
+      try {
+        await navigator.share({
+          title: `AI 분석 리포트 · ${reportMeta.topic}`,
+          text: `'${reportMeta.topic}' 뉴스 AI 분석 리포트`,
+          url,
+        });
+      } catch {
+        /* 사용자가 공유를 취소한 경우 등 — 무시 */
+      }
+      return;
+    }
+    try {
+      await navigator.clipboard.writeText(url);
+      setShareMsg('링크를 복사했어요 📋');
+    } catch {
+      setShareMsg('복사에 실패했어요. 주소창 URL을 사용하세요');
+    }
+    window.setTimeout(() => setShareMsg(''), 2500);
+  };
+
+  // PDF 저장: 브라우저 인쇄('PDF로 저장')를 사용 → 한글 폰트/레이아웃이 그대로 유지됨
+  const downloadPdf = () => {
+    window.print();
   };
 
   // ── 폼 화면 ──
@@ -346,7 +413,7 @@ export default function ReportPage() {
     };
 
     return (
-      <div className={styles.reportWrap}>
+      <div className={styles.reportWrap} data-print-root>
         <div className={styles.reportHead}>
           <div className={styles.reportKicker}>
             <span className={styles.kickerLabel}>AI 분석 리포트</span>
@@ -443,9 +510,12 @@ export default function ReportPage() {
           </div>
         )}
 
-        <div className={styles.reportActions}>
-          <button type="button" className={styles.actionGhost} onClick={reset}>새 분석 시작</button>
-          <button type="button" className={styles.actionPrimary} onClick={saveReport}>리포트 저장</button>
+        {shareMsg && <div className={styles.shareToast} data-print-hide>{shareMsg}</div>}
+        <div className={styles.reportActions} data-print-hide>
+          <button type="button" className={styles.actionGhost} onClick={reset}>새 분석</button>
+          <button type="button" className={styles.actionGhost} onClick={shareReport}>공유</button>
+          <button type="button" className={styles.actionGhost} onClick={downloadPdf}>PDF 저장</button>
+          <button type="button" className={styles.actionPrimary} onClick={saveReport}>텍스트 저장</button>
         </div>
       </div>
     );

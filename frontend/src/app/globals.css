@@ -185,3 +185,35 @@ a {
   display: none !important;
 }
 
+/* ── 인쇄('PDF로 저장'): 리포트 본문만 깔끔하게 출력 ── */
+@media print {
+  /* 사이드바 등 앱 UI는 숨기고, data-print-root 하위만 보이게 한다 */
+  body * {
+    visibility: hidden;
+  }
+  [data-print-root],
+  [data-print-root] * {
+    visibility: visible;
+  }
+  [data-print-root] {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+    padding: 0;
+    /* 감성 분포 바 등 배경색이 인쇄에도 나오도록 */
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+  [data-print-root] * {
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+  [data-print-hide] {
+    display: none !important;
+  }
+  @page {
+    margin: 14mm;
+  }
+}
+

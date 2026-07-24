@@ -652,6 +652,26 @@
   background: var(--rp-accent-strong);
 }
 
+/* 4개 버튼이 좁은 화면에서 자연스럽게 줄바꿈되도록 */
+.reportActions {
+  flex-wrap: wrap;
+}
+.reportActions > button {
+  flex: 1 1 110px;
+}
+
+/* 공유 링크 복사 확인 토스트 */
+.shareToast {
+  align-self: center;
+  padding: 8px 16px;
+  border-radius: 999px;
+  background: var(--rp-accent);
+  color: #ffffff;
+  font-size: 13px;
+  font-weight: 700;
+  box-shadow: 0 4px 14px var(--rp-glow, rgba(0, 0, 0, 0.15));
+}
+
 /* ── Responsive ── */
 @media (max-width: 768px) {
   .main {
