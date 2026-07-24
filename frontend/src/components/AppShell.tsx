@@ -9,6 +9,7 @@ import TrendingKeywords from './TrendingKeywords';
 const navItems = [
   { href: '/', icon: 'search', label: '검색' },
   { href: '/analyze', icon: 'auto_awesome', label: 'AI 리포트' },
+  { href: '/compare', icon: 'balance', label: '주제 비교' },
 ];
 
 export default function AppShell({ children }: { children: React.ReactNode }) {

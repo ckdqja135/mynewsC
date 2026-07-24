@@ -660,6 +660,12 @@
   flex: 1 1 110px;
 }
 
+.actionGhost:disabled,
+.actionPrimary:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
 /* 공유 링크 복사 확인 토스트 */
 .shareToast {
   align-self: center;

@@ -4,6 +4,7 @@ import { useState, useEffect, useRef, type ReactNode } from 'react';
 import { NewsApiService } from '@/services/newsApi';
 import type { NewsAnalysisResponse, AnalysisType, AnalysisSource } from '@/types/news';
 import { SENTIMENT_META } from '@/constants/sentiment';
+import { exportElementToPdf } from '@/services/exportPdf';
 import styles from './analyze.module.css';
 
 // 분석 관점 → 백엔드 analysis_type 매핑 (실제 백엔드가 지원하는 4종에 대응)
@@ -80,10 +81,12 @@ export default function ReportPage() {
   const [highlightSrc, setHighlightSrc] = useState<number | null>(null);
   const [excludedSources, setExcludedSources] = useState<Set<string>>(new Set());
   const [shareMsg, setShareMsg] = useState('');
+  const [pdfBusy, setPdfBusy] = useState(false);
 
   const stepTimer = useRef<ReturnType<typeof setInterval> | null>(null);
   const runningRef = useRef(false);
   const autoRanRef = useRef(false);
+  const reportRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     try {
@@ -239,9 +242,19 @@ export default function ReportPage() {
     window.setTimeout(() => setShareMsg(''), 2500);
   };
 
-  // PDF 저장: 브라우저 인쇄('PDF로 저장')를 사용 → 한글 폰트/레이아웃이 그대로 유지됨
-  const downloadPdf = () => {
-    window.print();
+  // PDF 저장: 리포트 화면을 캡처해 원클릭으로 PDF 파일로 다운로드
+  const downloadPdf = async () => {
+    if (!reportRef.current || pdfBusy) return;
+    setPdfBusy(true);
+    try {
+      await exportElementToPdf(reportRef.current, `AI리포트-${reportMeta?.topic || 'report'}`);
+    } catch (e) {
+      console.error('[PDF] 생성 실패:', e);
+      setShareMsg('PDF 생성에 실패했어요. 다시 시도해 주세요');
+      window.setTimeout(() => setShareMsg(''), 2500);
+    } finally {
+      setPdfBusy(false);
+    }
   };
 
   // ── 폼 화면 ──
@@ -413,7 +426,7 @@ export default function ReportPage() {
     };
 
     return (
-      <div className={styles.reportWrap} data-print-root>
+      <div className={styles.reportWrap} data-print-root ref={reportRef}>
         <div className={styles.reportHead}>
           <div className={styles.reportKicker}>
             <span className={styles.kickerLabel}>AI 분석 리포트</span>
@@ -514,7 +527,9 @@ export default function ReportPage() {
         <div className={styles.reportActions} data-print-hide>
           <button type="button" className={styles.actionGhost} onClick={reset}>새 분석</button>
           <button type="button" className={styles.actionGhost} onClick={shareReport}>공유</button>
-          <button type="button" className={styles.actionGhost} onClick={downloadPdf}>PDF 저장</button>
+          <button type="button" className={styles.actionGhost} onClick={downloadPdf} disabled={pdfBusy}>
+            {pdfBusy ? 'PDF 생성 중…' : 'PDF 저장'}
+          </button>
           <button type="button" className={styles.actionPrimary} onClick={saveReport}>텍스트 저장</button>
         </div>
       </div>

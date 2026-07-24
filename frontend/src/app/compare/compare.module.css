@@ -1,0 +1,532 @@
+/* ─── 주제 비교 페이지 ───
+   AI 리포트 페이지와 동일한 디자인 토큰(초록 #4e9d7c). 라이트/다크 대응. */
+.page {
+  --rp-bg: #ffffff;
+  --rp-card: #fbfcfc;
+  --rp-border: #eceef0;
+  --rp-border-strong: #e4e7ea;
+  --rp-text: #20242a;
+  --rp-text-2: #2b2f36;
+  --rp-text-3: #3f454b;
+  --rp-sub: #8a9096;
+  --rp-mute: #aeb4ba;
+  --rp-accent: #4e9d7c;
+  --rp-accent-strong: #41866a;
+  --rp-accent-soft: #eef7f2;
+  --rp-accent-soft-border: #d8ebe1;
+  --rp-track: #f0f2f3;
+  --rp-hover: #f7f8f9;
+
+  min-height: 100vh;
+  background: var(--rp-bg);
+  font-family: 'Pretendard', 'Noto Sans KR', -apple-system, 'Malgun Gothic', sans-serif;
+  color: var(--rp-text);
+}
+
+:global([data-theme='dark']) .page {
+  --rp-bg: #15171b;
+  --rp-card: #1c1f24;
+  --rp-border: #2a2e34;
+  --rp-border-strong: #363b42;
+  --rp-text: #f2f4f6;
+  --rp-text-2: #e8eaed;
+  --rp-text-3: #cfd3d8;
+  --rp-sub: #a4abb2;
+  --rp-mute: #7c8288;
+  --rp-accent: #5cae8b;
+  --rp-accent-strong: #6fbd9a;
+  --rp-accent-soft: rgba(78, 157, 124, 0.16);
+  --rp-accent-soft-border: rgba(78, 157, 124, 0.35);
+  --rp-track: #2a2e34;
+  --rp-hover: #23272d;
+}
+
+.main {
+  max-width: 900px;
+  margin: 0 auto;
+  padding: 34px 44px 60px;
+}
+
+/* ── 헤더 ── */
+.pageHead {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 26px;
+}
+.pageTitle {
+  margin: 0;
+  font-size: 28px;
+  font-weight: 800;
+  letter-spacing: -0.5px;
+  color: var(--rp-text);
+}
+.pageSub {
+  margin: 0;
+  font-size: 15px;
+  color: var(--rp-sub);
+}
+
+.errorBanner {
+  margin-bottom: 16px;
+  padding: 12px 16px;
+  border-radius: 12px;
+  background: #fdecea;
+  color: #c0392b;
+  font-size: 14px;
+  font-weight: 600;
+}
+:global([data-theme='dark']) .errorBanner {
+  background: rgba(229, 128, 107, 0.15);
+  color: #e5806b;
+}
+
+/* ── 폼 ── */
+.formCard {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  padding: 28px 26px;
+  border: 1px solid var(--rp-border);
+  border-radius: 18px;
+  background: var(--rp-card);
+}
+
+.vsRow {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.topicInput {
+  flex: 1;
+  min-width: 0;
+  height: 52px;
+  padding: 0 16px;
+  border: 1.5px solid var(--rp-border-strong);
+  border-radius: 12px;
+  background: var(--rp-bg);
+  color: var(--rp-text);
+  font-size: 15px;
+  font-family: inherit;
+  outline: none;
+  transition: border-color 0.15s ease;
+}
+.topicInput:focus {
+  border-color: var(--rp-accent);
+}
+.topicInput::placeholder {
+  color: var(--rp-mute);
+}
+.vsBadge {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background: var(--rp-accent-soft);
+  border: 1px solid var(--rp-accent-soft-border);
+  color: var(--rp-accent);
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.fieldLabelSm {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--rp-text-3);
+}
+.optionRow {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.optionBtn,
+.optionBtnTall {
+  flex: 1 1 auto;
+  min-width: 72px;
+  border: 1.5px solid var(--rp-border-strong);
+  border-radius: 12px;
+  background: var(--rp-bg);
+  color: var(--rp-sub);
+  font-family: inherit;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+.optionBtn {
+  height: 44px;
+  font-size: 14px;
+}
+.optionBtnTall {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  padding: 10px 8px;
+}
+.optionBtn:hover,
+.optionBtnTall:hover {
+  border-color: var(--rp-accent);
+  color: var(--rp-accent);
+}
+.optionBtnOn {
+  border-color: var(--rp-accent);
+  background: var(--rp-accent-soft);
+  color: var(--rp-accent);
+}
+.optionName {
+  font-size: 14px;
+  font-weight: 800;
+}
+.optionSub {
+  font-size: 12px;
+  color: var(--rp-mute);
+}
+
+.hint {
+  margin: -6px 0 0;
+  font-size: 13px;
+  color: var(--rp-mute);
+}
+
+.ctaButton {
+  height: 54px;
+  border: none;
+  border-radius: 14px;
+  background: var(--rp-accent);
+  color: #ffffff;
+  font-size: 16px;
+  font-weight: 800;
+  font-family: inherit;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+.ctaButton:hover {
+  background: var(--rp-accent-strong);
+}
+
+/* ── 로딩 ── */
+.loadingWrap {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+  padding: 90px 20px;
+  text-align: center;
+}
+.loadingSpinner {
+  width: 46px;
+  height: 46px;
+  border: 4px solid var(--rp-track);
+  border-top-color: var(--rp-accent);
+  border-radius: 50%;
+  animation: spin 0.9s linear infinite;
+}
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+.loadingTitle {
+  font-size: 18px;
+  font-weight: 800;
+  color: var(--rp-text);
+}
+.loadingSub {
+  font-size: 14px;
+  color: var(--rp-sub);
+}
+
+/* ── 리포트 ── */
+.reportWrap {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+.reportHead {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.kicker {
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 1px;
+  color: var(--rp-accent);
+  text-transform: uppercase;
+}
+.reportTitle {
+  margin: 0;
+  font-size: 26px;
+  font-weight: 800;
+  letter-spacing: -0.5px;
+  color: var(--rp-text);
+}
+.vsInline {
+  color: var(--rp-mute);
+  font-weight: 700;
+  font-size: 20px;
+}
+.verdict {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--rp-text-2);
+}
+
+.section {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 20px 22px;
+  border: 1px solid var(--rp-border);
+  border-radius: 16px;
+  background: var(--rp-card);
+}
+.cardTitle {
+  font-size: 14px;
+  font-weight: 800;
+  color: var(--rp-text-2);
+}
+
+/* 감성 점수 diverging 바 */
+.divergeRows {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.divergeRow {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.divergeLabel {
+  flex: none;
+  width: 110px;
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--rp-text-3);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.divergeTrack {
+  position: relative;
+  flex: 1;
+  height: 16px;
+  border-radius: 8px;
+  background: var(--rp-track);
+}
+.divergeMid {
+  position: absolute;
+  left: 50%;
+  top: -2px;
+  bottom: -2px;
+  width: 2px;
+  transform: translateX(-1px);
+  background: var(--rp-border-strong);
+}
+.divergeFill {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  border-radius: 4px;
+  min-width: 2px;
+}
+.divergeVal {
+  flex: none;
+  width: 52px;
+  text-align: right;
+  font-size: 14px;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  color: var(--rp-text-2);
+}
+.axisNote {
+  font-size: 12px;
+  color: var(--rp-mute);
+  text-align: center;
+}
+
+/* 공통 범례 */
+.sentLegend {
+  display: flex;
+  justify-content: center;
+  gap: 18px;
+  margin-top: -4px;
+}
+.sentLegend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--rp-sub);
+}
+.sentLegend i {
+  width: 12px;
+  height: 12px;
+  border-radius: 4px;
+}
+
+/* 컬럼 비교 그리드 */
+.compareGrid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+}
+.topicCard {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 20px;
+  border: 1px solid var(--rp-border);
+  border-radius: 16px;
+  background: var(--rp-card);
+}
+.topicCardHead {
+  font-size: 17px;
+  font-weight: 800;
+  color: var(--rp-text);
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--rp-border);
+  word-break: break-word;
+}
+.statRow {
+  display: flex;
+  gap: 10px;
+}
+.stat {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  padding: 12px 6px;
+  border-radius: 12px;
+  background: var(--rp-hover);
+}
+.statNum {
+  font-size: 20px;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  color: var(--rp-text);
+}
+.statLbl {
+  font-size: 12px;
+  color: var(--rp-sub);
+}
+
+/* 감성 분포 스택 바 (segment 사이 2px 간격 + 둥근 끝) */
+.sentBar {
+  display: flex;
+  gap: 2px;
+  height: 12px;
+  border-radius: 6px;
+  overflow: hidden;
+  background: var(--rp-track);
+}
+.sentBar > span {
+  border-radius: 3px;
+}
+
+.summary {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.65;
+  color: var(--rp-text-3);
+}
+.pointList {
+  margin: 0;
+  padding-left: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.pointList li {
+  font-size: 13.5px;
+  line-height: 1.55;
+  color: var(--rp-text-3);
+}
+
+/* 공유 토스트 */
+.shareToast {
+  align-self: center;
+  padding: 8px 16px;
+  border-radius: 999px;
+  background: var(--rp-accent);
+  color: #ffffff;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+/* 액션 */
+.reportActions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.actionGhost,
+.actionPrimary {
+  flex: 1 1 110px;
+  height: 50px;
+  border-radius: 12px;
+  font-size: 15px;
+  font-weight: 800;
+  font-family: inherit;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+.actionGhost {
+  border: 1.5px solid var(--rp-border-strong);
+  background: var(--rp-bg);
+  color: var(--rp-sub);
+}
+.actionGhost:hover {
+  border-color: var(--rp-accent);
+  color: var(--rp-accent);
+}
+.actionPrimary {
+  border: none;
+  background: var(--rp-accent);
+  color: #ffffff;
+}
+.actionPrimary:hover {
+  background: var(--rp-accent-strong);
+}
+.actionGhost:disabled,
+.actionPrimary:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+/* ── 반응형 ── */
+@media (max-width: 768px) {
+  .main {
+    padding: 24px 16px 88px;
+  }
+  .compareGrid {
+    grid-template-columns: 1fr;
+  }
+  .vsRow {
+    flex-wrap: wrap;
+  }
+  .topicInput {
+    flex: 1 1 100%;
+  }
+  .vsBadge {
+    order: 1;
+    margin: 0 auto;
+  }
+  .divergeLabel {
+    width: 84px;
+    font-size: 13px;
+  }
+  .reportTitle {
+    font-size: 22px;
+  }
+}
